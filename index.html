@@ -171,6 +171,7 @@ const S={tab:'inicio',mes:'',tipo:'Todos',q:'',mov:null,venc:null,cmes:'',cat:''
 // Días hasta una fecha en palabras
 const enDias=n=>n===0?'Hoy':n===1?'Mañana':n===-1?'Ayer':n<0?`Hace ${-n} días`:`En ${n} días`;
 // Mes en curso 'aaaa-mm' según la hora del iPhone
+const hoyF=()=>{const d=new Date();return hoyK()+'-'+String(d.getDate()).padStart(2,'0')};
 const hoyK=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')};
 const mesCorto=k=>{const p=k.split('-');return new Date(p[0],p[1]-1,1).toLocaleDateString('es-AR',{month:'short'}).replace('.','')};
 
@@ -253,13 +254,25 @@ function dona(cats,tot,mes){
 
 // Tocar una categoría (Inicio o Consumos) abre Movimientos de ese mes filtrado
 function verCat(n,mes,desde){S.cat=n;S.mes=mes||S.mes;S.tipo='Todos';S.q='';S.volver=desde||'';go('movs')}
-function verMovs(){S.cat='';S.volver='';go('movs')}
+// Desde la barra de abajo: siempre el mes en curso, con el día de hoy marcado
+function verMovs(){S.cat='';S.volver='';S.mes='';S.dia=hoyF();go('movs')}
+// Botón "Hoy": vuelve al mes en curso, marca hoy y sube al calendario
+function irHoy(){
+  S.dia=hoyF();
+  if(S.mes!==hoyK()){S.mes=hoyK();go('movs');return}
+  calendario(filtrados());window.scrollTo({top:0,behavior:'smooth'});
+}
+// Al volver arriba del todo (por ejemplo tocando la hora del iPhone) se vuelve a marcar hoy
+window.addEventListener('scroll',()=>{
+  if(S.tab!=='movs'||window.scrollY>4||S.dia===hoyF()||S.mes!==hoyK()||Date.now()-(S.diaT||0)<1500)return;
+  S.dia=hoyF();calendario(filtrados());
+},{passive:true});
 function quitarCat(){S.cat='';S.volver='';S.cuo=null;$('#view').innerHTML=vMovs();lista()}
 const mismaCat=(a,b)=>String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase();
 function vMovs(){
   const m=S.mov;
   const filtro=S.cat?`<div class="tools">${S.volver?`<button class="chip" onclick="go(S.volver)">‹ Volver</button>`:''}<button class="chip on cat" onclick="quitarCat()"><span class="cdot" style="margin:0;background:${colCat(S.cat)}"></span>${esc(S.cat)}<span class="x">✕</span></button></div><div id="rescat"></div>`:'';
-  return filtro+`<div class="tools"><select onchange="S.mes=this.value;go('movs')">${m.meses.map(k=>`<option value="${k}" ${k===m.mes?'selected':''}>${esc(mesTxt(k))}</option>`).join('')}</select>${['Todos','Gasto','Ingreso'].map(t=>`<button class="chip ${S.tipo===t?'on':''}" onclick="S.tipo='${t}';document.querySelectorAll('.tools .chip[data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t==='${t}'));lista()" data-t="${t}">${t==='Todos'?'Todos':t+'s'}</button>`).join('')}</div><div id="cal" class="card cal"></div><input id="q" type="search" placeholder="Buscar descripción, cuenta o categoría" oninput="S.q=this.value;lista()" value="${esc(S.q)}"><div id="lista"></div>`;
+  return filtro+`<div class="tools"><select onchange="S.mes=this.value;go('movs')">${m.meses.map(k=>`<option value="${k}" ${k===m.mes?'selected':''}>${esc(mesTxt(k))}</option>`).join('')}</select><button class="chip" onclick="irHoy()">Hoy</button>${['Todos','Gasto','Ingreso'].map(t=>`<button class="chip ${S.tipo===t?'on':''}" onclick="S.tipo='${t}';document.querySelectorAll('.tools .chip[data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t==='${t}'));lista()" data-t="${t}">${t==='Todos'?'Todos':t+'s'}</button>`).join('')}</div><div id="cal" class="card cal"></div><input id="q" type="search" placeholder="Buscar descripción, cuenta o categoría" oninput="S.q=this.value;lista()" value="${esc(S.q)}"><div id="lista"></div>`;
 }
 // Movimientos del mes con los filtros activos (categoría, tipo y búsqueda)
 function filtrados(){
@@ -283,7 +296,7 @@ function lista(){
 function calendario(it){
   const el=$('#cal');if(!el||!S.mes)return;
   const [y,mo]=S.mes.split('-').map(Number),n=new Date(y,mo,0).getDate(),ini=(new Date(y,mo-1,1).getDay()+6)%7;
-  const hoy=(()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')})();
+  const hoy=hoyF();
   const por={};it.forEach(x=>{(por[x.f]=por[x.f]||[]).push(x)});
   let h='<div class="wd">'+['L','M','M','J','V','S','D'].map(d=>`<span>${d}</span>`).join('')+'</div><div class="ds">'+'<span></span>'.repeat(ini);
   for(let d=1;d<=n;d++){
@@ -296,7 +309,7 @@ function calendario(it){
 }
 // Marca el día y baja hasta sus movimientos (no oculta los demás)
 function irDia(f){
-  S.dia=f;calendario(filtrados());
+  S.dia=f;S.diaT=Date.now();calendario(filtrados());
   const t=document.getElementById('d-'+f);if(!t)return;
   // Deja el día por debajo de la barra de estado del iPhone (zona borrosa), con aire arriba
   const safe=(parseFloat(getComputedStyle($('#app')).paddingTop)||14)-14;
