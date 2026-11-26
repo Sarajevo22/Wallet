@@ -105,7 +105,7 @@ nav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;st
 .cal .ds i{display:flex;gap:2px;height:4px}
 .cal .ds i b{width:4px;height:4px;border-radius:50%}
 .cal .ds button:not(:disabled):active{opacity:.6}
-.dn{scroll-margin-top:14px}
+
 .card.flash{animation:flash 1.2s ease}
 @keyframes flash{0%,40%{box-shadow:0 0 0 2px var(--blue)}100%{box-shadow:0 0 0 2px transparent}}
 .chip.cat{display:flex;align-items:center;gap:6px}
@@ -298,7 +298,9 @@ function calendario(it){
 function irDia(f){
   S.dia=f;calendario(filtrados());
   const t=document.getElementById('d-'+f);if(!t)return;
-  t.scrollIntoView({behavior:'smooth',block:'start'});
+  // Deja el día por debajo de la barra de estado del iPhone (zona borrosa), con aire arriba
+  const safe=(parseFloat(getComputedStyle($('#app')).paddingTop)||14)-14;
+  window.scrollTo({top:t.getBoundingClientRect().top+window.scrollY-safe-72,behavior:'smooth'});
   const c=t.nextElementSibling;if(c){c.classList.remove('flash');void c.offsetWidth;c.classList.add('flash')}
 }
 // Resumen de la categoría: igual que el Resumen Anual = Valor Cuota de los movimientos del mes + cuotas de Cuotas_Auto
