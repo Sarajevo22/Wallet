@@ -94,6 +94,20 @@ nav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;st
 .bars.tap div{cursor:pointer}
 .ic svg{width:34px;height:34px;display:block}
 .ic.logo{background:#2d373e}
+/* Calendario de Movimientos */
+.cal{padding:14px 12px 10px}
+.cal .wd,.cal .ds{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
+.cal .wd span{color:var(--mu);font-size:12px;padding-bottom:6px}
+.cal .ds button{position:relative;border:0;background:none;color:var(--tx);font:inherit;font-size:15px;height:40px;margin:1px;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+.cal .ds button:disabled{color:#4f5c65}
+.cal .ds button.hoy{box-shadow:inset 0 0 0 1.5px var(--line)}
+.cal .ds button.on{background:#e9eef1;color:#12161a;font-weight:600}
+.cal .ds i{display:flex;gap:2px;height:4px}
+.cal .ds i b{width:4px;height:4px;border-radius:50%}
+.cal .ds button:not(:disabled):active{opacity:.6}
+.dn{scroll-margin-top:14px}
+.card.flash{animation:flash 1.2s ease}
+@keyframes flash{0%,40%{box-shadow:0 0 0 2px var(--blue)}100%{box-shadow:0 0 0 2px transparent}}
 .chip.cat{display:flex;align-items:center;gap:6px}
 .chip.cat .x{opacity:.55;margin-left:2px}
 details summary{list-style:none;cursor:pointer;color:var(--mu);font-size:15px;font-weight:600}
@@ -153,7 +167,7 @@ const IC={
 const TABS=[['inicio','Inicio'],['movs','Movimientos'],['venc','Vencimientos'],['activos','Activos'],['mas','Más']];
 // [texto, pestaña] o [texto, número de fase si todavía no existe]
 const MENU=[['Tarjetas','tarj'],['Cuotas','cuotas'],['Préstamo','prest'],['Súper','super'],['Resumen Anual','anual'],['Consumos por categoría','consumos'],['Salario','salario'],['Inflación','ipc'],['Configuración','config']];
-const S={tab:'inicio',mes:'',tipo:'Todos',q:'',mov:null,venc:null,cmes:'',cat:'',volver:'',cuo:null,ssub:'',sup:null,smes:null,an:null,ames:'',sal:null,sali:-1,cq:null,cpm:null,cuom:''};
+const S={tab:'inicio',mes:'',tipo:'Todos',q:'',mov:null,venc:null,cmes:'',cat:'',volver:'',cuo:null,dia:'',ssub:'',sup:null,smes:null,an:null,ames:'',sal:null,sali:-1,cq:null,cpm:null,cuom:''};
 // Días hasta una fecha en palabras
 const enDias=n=>n===0?'Hoy':n===1?'Mañana':n===-1?'Ayer':n<0?`Hace ${-n} días`:`En ${n} días`;
 // Mes en curso 'aaaa-mm' según la hora del iPhone
@@ -245,20 +259,47 @@ const mismaCat=(a,b)=>String(a||'').trim().toLowerCase()===String(b||'').trim().
 function vMovs(){
   const m=S.mov;
   const filtro=S.cat?`<div class="tools">${S.volver?`<button class="chip" onclick="go(S.volver)">‹ Volver</button>`:''}<button class="chip on cat" onclick="quitarCat()"><span class="cdot" style="margin:0;background:${colCat(S.cat)}"></span>${esc(S.cat)}<span class="x">✕</span></button></div><div id="rescat"></div>`:'';
-  return filtro+`<div class="tools"><select onchange="S.mes=this.value;go('movs')">${m.meses.map(k=>`<option value="${k}" ${k===m.mes?'selected':''}>${esc(mesTxt(k))}</option>`).join('')}</select>${['Todos','Gasto','Ingreso'].map(t=>`<button class="chip ${S.tipo===t?'on':''}" onclick="S.tipo='${t}';document.querySelectorAll('.tools .chip[data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t==='${t}'));lista()" data-t="${t}">${t==='Todos'?'Todos':t+'s'}</button>`).join('')}</div><input id="q" type="search" placeholder="Buscar descripción, cuenta o categoría" oninput="S.q=this.value;lista()" value="${esc(S.q)}"><div id="lista"></div>`;
+  return filtro+`<div class="tools"><select onchange="S.mes=this.value;go('movs')">${m.meses.map(k=>`<option value="${k}" ${k===m.mes?'selected':''}>${esc(mesTxt(k))}</option>`).join('')}</select>${['Todos','Gasto','Ingreso'].map(t=>`<button class="chip ${S.tipo===t?'on':''}" onclick="S.tipo='${t}';document.querySelectorAll('.tools .chip[data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t==='${t}'));lista()" data-t="${t}">${t==='Todos'?'Todos':t+'s'}</button>`).join('')}</div><div id="cal" class="card cal"></div><input id="q" type="search" placeholder="Buscar descripción, cuenta o categoría" oninput="S.q=this.value;lista()" value="${esc(S.q)}"><div id="lista"></div>`;
+}
+// Movimientos del mes con los filtros activos (categoría, tipo y búsqueda)
+function filtrados(){
+  const q=S.q.trim().toLowerCase();
+  return S.mov.items.filter(x=>(!S.cat||mismaCat(x.cat,S.cat))&&(S.tipo==='Todos'||x.t===S.tipo)&&(!q||(x.d+' '+x.c+' '+x.cat).toLowerCase().includes(q)));
 }
 function lista(){
-  const q=S.q.trim().toLowerCase();
-  const it=S.mov.items.filter(x=>(!S.cat||mismaCat(x.cat,S.cat))&&(S.tipo==='Todos'||x.t===S.tipo)&&(!q||(x.d+' '+x.c+' '+x.cat).toLowerCase().includes(q)));
+  const it=filtrados();
+  calendario(it);
   if(!it.length){$('#lista').innerHTML=S.cat&&S.cuo&&S.cuo.items.some(c=>mismaCat(c.cat,S.cat))?'':'<div class="empty"><b>Sin movimientos</b>Probá con otro mes o quitá los filtros.</div>';return}
   let h='',dia='',abierto=false;
   it.forEach(x=>{
-    if(x.f!==dia){if(abierto)h+='</div>';dia=x.f;h+=`<div class="dn">${esc(diaTxt(x.f))}</div><div class="card" style="padding:4px 16px">`;abierto=true}
+    if(x.f!==dia){if(abierto)h+='</div>';dia=x.f;h+=`<div class="dn" id="d-${x.f}">${esc(diaTxt(x.f))}</div><div class="card" style="padding:4px 16px">`;abierto=true}
     const ing=x.t==='Ingreso',otro=x.t!=='Ingreso'&&x.t!=='Gasto';
     const tipo=otro&&x.t?` · ${esc(x.t)}`:'';
     h+=`<div class="row"><div class="g"><div>${esc(x.d)}</div><div class="sub"><span class="cdot" style="background:${colCat(x.cat)}"></span>${esc(x.cat||'Sin categoría')} · ${esc(x.c)}${tipo}</div></div><div class="r ${ing?'pos':otro?'neu':''}">${ing?'+':''}${money(x.m,x.mon)}${x.q>1?`<div class="sub">${x.q} cuotas de ${money(x.vc,x.mon)}</div>`:''}</div></div>`;
   });
   $('#lista').innerHTML=h+'</div>';
+}
+// Calendario del mes: los días con movimientos (según los filtros activos) se pueden tocar
+function calendario(it){
+  const el=$('#cal');if(!el||!S.mes)return;
+  const [y,mo]=S.mes.split('-').map(Number),n=new Date(y,mo,0).getDate(),ini=(new Date(y,mo-1,1).getDay()+6)%7;
+  const hoy=(()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')})();
+  const por={};it.forEach(x=>{(por[x.f]=por[x.f]||[]).push(x)});
+  let h='<div class="wd">'+['L','M','M','J','V','S','D'].map(d=>`<span>${d}</span>`).join('')+'</div><div class="ds">'+'<span></span>'.repeat(ini);
+  for(let d=1;d<=n;d++){
+    const f=S.mes+'-'+String(d).padStart(2,'0'),xs=por[f]||[];
+    // Hasta 3 puntos con los colores de las categorías del día
+    const cols=[...new Set(xs.map(x=>x.t==='Ingreso'?'var(--grn)':colCat(x.cat)))].slice(0,3);
+    h+=`<button ${xs.length?`onclick="irDia('${f}')"`:'disabled'} class="${f===hoy?'hoy':''} ${f===S.dia?'on':''}" aria-label="${d}${xs.length?', '+xs.length+' movimientos':''}">${d}<i>${cols.map(c=>`<b style="background:${c}"></b>`).join('')}</i></button>`;
+  }
+  el.innerHTML=h+'</div>';
+}
+// Marca el día y baja hasta sus movimientos (no oculta los demás)
+function irDia(f){
+  S.dia=f;calendario(filtrados());
+  const t=document.getElementById('d-'+f);if(!t)return;
+  t.scrollIntoView({behavior:'smooth',block:'start'});
+  const c=t.nextElementSibling;if(c){c.classList.remove('flash');void c.offsetWidth;c.classList.add('flash')}
 }
 // Resumen de la categoría: igual que el Resumen Anual = Valor Cuota de los movimientos del mes + cuotas de Cuotas_Auto
 function resCat(){
