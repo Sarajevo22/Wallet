@@ -86,6 +86,12 @@ nav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;st
 .tag{display:inline-block;font-size:12px;border-radius:99px;padding:2px 8px;background:#2d373e;color:var(--mu);margin-left:6px;vertical-align:1px}
 .tag.red{background:rgba(236,116,128,.18);color:var(--red)}
 .tag.blue{background:rgba(93,180,251,.16);color:var(--blue)}
+/* Categoría tocable -> Movimientos filtrados */
+.tap{cursor:pointer}
+.tap:active{opacity:.6}
+.tap .g div:first-child::after{content:' ›';color:var(--mu)}
+.chip.cat{display:flex;align-items:center;gap:6px}
+.chip.cat .x{opacity:.55;margin-left:2px}
 details summary{list-style:none;cursor:pointer;color:var(--mu);font-size:15px;font-weight:600}
 details summary::-webkit-details-marker{display:none}
 details[open] summary{margin-bottom:8px}
@@ -110,7 +116,7 @@ const corto=f=>{const p=f.split('-');return new Date(p[0],p[1]-1,p[2]).toLocaleD
 /* ---------- Conexión con Apps Script (URL + clave guardadas en este iPhone) ---------- */
 const CFG={get(k){try{return localStorage.getItem('billetera_'+k)||''}catch(e){return ''}},set(k,v){try{localStorage.setItem('billetera_'+k,v)}catch(e){}}};
 // Nombre de la función de Apps Script -> [fn de la API, parámetros]
-const API={App_inicio:['inicio',['fresh']],App_movimientos:['movimientos',['mes','fresh']],App_vencimientos:['vencimientos',['fresh']],App_cuotas:['cuotas',['fresh']],App_prestamo:['prestamo',['fresh']],App_activos:['activos',['fresh']],App_ipc:['ipc',['fresh']],App_super:['super',['fresh']],App_resumenAnual:['resumenAnual',['fresh']],App_salario:['salario',['fresh']]};
+const API={App_inicio:['inicio',['fresh']],App_movimientos:['movimientos',['mes','fresh']],App_vencimientos:['vencimientos',['fresh']],App_cuotas:['cuotas',['fresh']],App_prestamo:['prestamo',['fresh']],App_activos:['activos',['fresh']],App_ipc:['ipc',['fresh']],App_super:['super',['fresh']],App_resumenAnual:['resumenAnual',['fresh']],App_salario:['salario',['fresh']],App_cuotasMes:['cuotasMes',['mes','fresh']]};
 async function run(fn,...a){
   const url=CFG.get('url'),key=CFG.get('key');
   if(!url||!key){config();throw new Error('Falta configurar la conexión')}
@@ -143,13 +149,13 @@ const IC={
 const TABS=[['inicio','Inicio'],['movs','Movimientos'],['venc','Vencimientos'],['activos','Activos'],['mas','Más']];
 // [texto, pestaña] o [texto, número de fase si todavía no existe]
 const MENU=[['Tarjetas','tarj'],['Cuotas','cuotas'],['Préstamo','prest'],['Súper','super'],['Resumen Anual','anual'],['Consumos por categoría','consumos'],['Salario','salario'],['Inflación','ipc'],['Configuración','config']];
-const S={tab:'inicio',mes:'',tipo:'Todos',q:'',mov:null,venc:null,cmes:''};
+const S={tab:'inicio',mes:'',tipo:'Todos',q:'',mov:null,venc:null,cmes:'',cat:'',volver:'',cuo:null};
 // Días hasta una fecha en palabras
 const enDias=n=>n===0?'Hoy':n===1?'Mañana':n===-1?'Ayer':n<0?`Hace ${-n} días`:`En ${n} días`;
 const mesCorto=k=>{const p=k.split('-');return new Date(p[0],p[1]-1,1).toLocaleDateString('es-AR',{month:'short'}).replace('.','')};
 
 function nav(){
-  $('#nav').innerHTML=TABS.map(t=>`<button class="${S.tab===t[0]||(t[0]==='venc'&&S.tab==='tarj')||(t[0]==='activos'&&S.tab==='ipc')?'on':''}" onclick="${t[0]==='mas'?'menu(true)':`go('${t[0]}')`}"><svg viewBox="0 0 24 24">${IC[t[0]]}</svg>${t[1]}</button>`).join('');
+  $('#nav').innerHTML=TABS.map(t=>`<button class="${S.tab===t[0]||(t[0]==='venc'&&S.tab==='tarj')||(t[0]==='activos'&&S.tab==='ipc')?'on':''}" onclick="${t[0]==='mas'?'menu(true)':t[0]==='movs'?'verMovs()':`go('${t[0]}')`}"><svg viewBox="0 0 24 24">${IC[t[0]]}</svg>${t[1]}</button>`).join('');
 }
 function menu(on){
   $('#menu').innerHTML='<h2>Más pestañas</h2>'+MENU.map(m=>`<button onclick="menu(false);${typeof m[1]==='string'?`go('${m[1]}')`:`fase('${m[0]}',${m[1]})`}">${m[0]}</button>`).join('');
@@ -171,8 +177,13 @@ async function go(tab,fresh){
       v.innerHTML=vInicio(await run('App_inicio',!!fresh));
     }else if(tab==='movs'){
       $('#ttl').textContent='Movimientos';v.innerHTML=cargando;
-      S.mov=await run('App_movimientos',S.mes,!!fresh);S.mes=S.mov.mes;
-      v.innerHTML=vMovs();lista();
+      if(S.cat){
+        const r=await Promise.all([run('App_movimientos',S.mes,!!fresh),run('App_cuotasMes',S.mes,!!fresh)]);
+        S.mov=r[0];S.cuo=r[1];
+        if(S.cuo.mes!==S.mov.mes)S.cuo=await run('App_cuotasMes',S.mov.mes,!!fresh);
+      }else{S.mov=await run('App_movimientos',S.mes,!!fresh);S.cuo=null}
+      S.mes=S.mov.mes;
+      v.innerHTML=vMovs();if(S.cat)resCat();lista();
     }else if(tab==='venc'||tab==='tarj'){
       $('#ttl').textContent=tab==='venc'?'Vencimientos':'Tarjetas';v.innerHTML=cargando;
       S.venc=await run('App_vencimientos',!!fresh);
@@ -205,27 +216,33 @@ function vInicio(d){
   let h=`<div class="hero"><small>Gastos de ${esc(mesTxt(d.mes).split(' ')[0].toLowerCase())}</small><b>${ppal(d.gas)}</b>${usdSub(d.gas,'usd')}</div>`;
   h+=`<div class="two"><div class="card"><small>Ingresos</small><b class="pos">${ppal(d.ing)}</b>${usdSub(d.ing)}</div>`;
   h+=`<div class="card"><small>${salLbl}</small><b class="${salCls}">${ppal(sal)}</b>${usdSub(sal)}</div></div>`;
-  if(tot>0)h+=`<div class="card"><h2>${esc(d.catsTitulo)}</h2>${d.catsNota?`<p class="nota">${esc(d.catsNota)}</p>`:''}${dona(d.cats,tot)}${d.cats.map((c,i)=>`<div class="row"><span class="dot" style="background:${COL[i%COL.length]}"></span><div class="g"><div>${esc(c.n)}</div></div><div class="r">${money(c.v)}<div class="sub">${(c.v/tot*100).toFixed(1).replace('.',',')}%${c.usd?` · ${money(c.usd,'USD')}`:''}</div></div></div>`).join('')}</div>`;
+  if(tot>0)h+=`<div class="card"><h2>${esc(d.catsTitulo)}</h2>${d.catsNota?`<p class="nota">${esc(d.catsNota)}</p>`:''}${dona(d.cats,tot,d.mes)}${d.cats.map((c,i)=>`<div class="row tap" data-cat="${esc(c.n)}" onclick="verCat(this.dataset.cat,'${d.mes}','inicio')"><span class="dot" style="background:${COL[i%COL.length]}"></span><div class="g"><div>${esc(c.n)}</div></div><div class="r">${money(c.v)}<div class="sub">${(c.v/tot*100).toFixed(1).replace('.',',')}%${c.usd?` · ${money(c.usd,'USD')}`:''}</div></div></div>`).join('')}</div>`;
   if(d.venc.length)h+=`<div class="card"><h2>Próximos vencimientos</h2>${d.venc.map(x=>`<div class="row"><div class="ic${x.vencido?' late':''}" style="font-size:12px;text-align:center;line-height:1.1">${esc(corto(x.f))}</div><div class="g"><div>${esc(x.item)}</div><div class="sub${x.vencido?' neg':''}">${x.vencido?'Vencido · ':''}${esc(x.cat)}</div></div><div class="r">${x.ars?money(x.ars):''}${x.usd?`<div class="sub">${money(x.usd,'USD')}</div>`:''}</div></div>`).join('')}</div>`;
   (d.secciones||[]).forEach(s=>{
     h+=`<div class="card"><h2>${esc(s.titulo)}</h2>${s.filas.map(f=>`<div class="row"><div class="g"><div>${esc(f.label)}</div></div><div class="r">${esc(f.texto)}</div></div>`).join('')}</div>`;
   });
   return h;
 }
-function dona(cats,tot){
+function dona(cats,tot,mes){
   const R=80,C=2*Math.PI*R;let off=0;
-  const seg=cats.map((c,i)=>{const L=c.v/tot*C,g=Math.max(L-3,0.5);const s=`<circle cx="100" cy="100" r="${R}" fill="none" stroke="${COL[i%COL.length]}" stroke-width="20" stroke-dasharray="${g} ${C-g}" stroke-dashoffset="${-off}" transform="rotate(-90 100 100)"/>`;off+=L;return s}).join('');
+  const seg=cats.map((c,i)=>{const L=c.v/tot*C,g=Math.max(L-3,0.5);const s=`<circle${mes?` class="tap" data-cat="${esc(c.n)}" onclick="verCat(this.dataset.cat,'${mes}','inicio')"`:''} cx="100" cy="100" r="${R}" fill="none" stroke="${COL[i%COL.length]}" stroke-width="20" stroke-dasharray="${g} ${C-g}" stroke-dashoffset="${-off}" transform="rotate(-90 100 100)"/>`;off+=L;return s}).join('');
   return `<div class="donut"><svg viewBox="0 0 200 200" width="200" height="200">${seg}</svg><div class="c"><div><span class="sub">Total</span><b>${money(tot)}</b></div></div></div>`;
 }
 
+// Tocar una categoría (Inicio o Consumos) abre Movimientos de ese mes filtrado
+function verCat(n,mes,desde){S.cat=n;S.mes=mes||S.mes;S.tipo='Todos';S.q='';S.volver=desde||'';go('movs')}
+function verMovs(){S.cat='';S.volver='';go('movs')}
+function quitarCat(){S.cat='';S.volver='';S.cuo=null;$('#view').innerHTML=vMovs();lista()}
+const mismaCat=(a,b)=>String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase();
 function vMovs(){
   const m=S.mov;
-  return `<div class="tools"><select onchange="S.mes=this.value;go('movs')">${m.meses.map(k=>`<option value="${k}" ${k===m.mes?'selected':''}>${esc(mesTxt(k))}</option>`).join('')}</select>${['Todos','Gasto','Ingreso'].map(t=>`<button class="chip ${S.tipo===t?'on':''}" onclick="S.tipo='${t}';document.querySelectorAll('.tools .chip').forEach(b=>b.classList.toggle('on',b.dataset.t==='${t}'));lista()" data-t="${t}">${t==='Todos'?'Todos':t+'s'}</button>`).join('')}</div><input id="q" type="search" placeholder="Buscar descripción, cuenta o categoría" oninput="S.q=this.value;lista()" value="${esc(S.q)}"><div id="lista"></div>`;
+  const filtro=S.cat?`<div class="tools">${S.volver?`<button class="chip" onclick="go(S.volver)">‹ Volver</button>`:''}<button class="chip on cat" onclick="quitarCat()"><span class="cdot" style="margin:0;background:${colCat(S.cat)}"></span>${esc(S.cat)}<span class="x">✕</span></button></div><div id="rescat"></div>`:'';
+  return filtro+`<div class="tools"><select onchange="S.mes=this.value;go('movs')">${m.meses.map(k=>`<option value="${k}" ${k===m.mes?'selected':''}>${esc(mesTxt(k))}</option>`).join('')}</select>${['Todos','Gasto','Ingreso'].map(t=>`<button class="chip ${S.tipo===t?'on':''}" onclick="S.tipo='${t}';document.querySelectorAll('.tools .chip[data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t==='${t}'));lista()" data-t="${t}">${t==='Todos'?'Todos':t+'s'}</button>`).join('')}</div><input id="q" type="search" placeholder="Buscar descripción, cuenta o categoría" oninput="S.q=this.value;lista()" value="${esc(S.q)}"><div id="lista"></div>`;
 }
 function lista(){
   const q=S.q.trim().toLowerCase();
-  const it=S.mov.items.filter(x=>(S.tipo==='Todos'||x.t===S.tipo)&&(!q||(x.d+' '+x.c+' '+x.cat).toLowerCase().includes(q)));
-  if(!it.length){$('#lista').innerHTML='<div class="empty"><b>Sin movimientos</b>Probá con otro mes o quitá los filtros.</div>';return}
+  const it=S.mov.items.filter(x=>(!S.cat||mismaCat(x.cat,S.cat))&&(S.tipo==='Todos'||x.t===S.tipo)&&(!q||(x.d+' '+x.c+' '+x.cat).toLowerCase().includes(q)));
+  if(!it.length){$('#lista').innerHTML=S.cat&&S.cuo&&S.cuo.items.some(c=>mismaCat(c.cat,S.cat))?'':'<div class="empty"><b>Sin movimientos</b>Probá con otro mes o quitá los filtros.</div>';return}
   let h='',dia='',abierto=false;
   it.forEach(x=>{
     if(x.f!==dia){if(abierto)h+='</div>';dia=x.f;h+=`<div class="dn">${esc(diaTxt(x.f))}</div><div class="card" style="padding:4px 16px">`;abierto=true}
@@ -234,6 +251,16 @@ function lista(){
     h+=`<div class="row"><div class="g"><div>${esc(x.d)}</div><div class="sub"><span class="cdot" style="background:${colCat(x.cat)}"></span>${esc(x.cat||'Sin categoría')} · ${esc(x.c)}${tipo}</div></div><div class="r ${ing?'pos':otro?'neu':''}">${ing?'+':''}${money(x.m,x.mon)}${x.q>1?`<div class="sub">${x.q} cuotas de ${money(x.vc,x.mon)}</div>`:''}</div></div>`;
   });
   $('#lista').innerHTML=h+'</div>';
+}
+// Resumen de la categoría: igual que el Resumen Anual = Valor Cuota de los movimientos del mes + cuotas de Cuotas_Auto
+function resCat(){
+  const movs=S.mov.items.filter(x=>mismaCat(x.cat,S.cat));
+  const ars=movs.filter(x=>x.mon!=='USD').reduce((a,x)=>a+x.vc,0),usd=movs.filter(x=>x.mon==='USD').reduce((a,x)=>a+x.vc,0);
+  const cuo=S.cuo?S.cuo.items.filter(c=>mismaCat(c.cat,S.cat)):[],tc=cuo.reduce((a,c)=>a+c.v,0);
+  let h=`<div class="hero"><small>${esc(S.cat)} en ${esc(mesTxt(S.mes).split(' ')[0].toLowerCase())}</small><b>${money(ars+tc)}</b>${usd?`<div class="usd">${money(usd,'USD')}</div>`:''}</div>`;
+  h+=`<div class="card"><div class="kv"><span>Movimientos del mes (${movs.length})</span>${money(ars)}</div>${cuo.length?`<div class="kv"><span>Cuotas con tarjeta del mes (${cuo.length})</span>${money(tc)}</div>`:''}<p class="sub" style="margin-top:8px">Las compras en cuotas suman solo la cuota del mes, como en Consumos por categoría.</p></div>`;
+  if(cuo.length)h+=`<details class="card"><summary>Cuotas con tarjeta de este mes ›</summary>${cuo.map(c=>`<div class="row"><div class="g"><div>${esc(c.n)}</div><div class="sub">${c.cuotas?c.cuotas+' cuotas · ':''}total ${money(c.total)}</div></div><div class="r">${money(c.v)}</div></div>`).join('')}</details>`;
+  $('#rescat').innerHTML=h;
 }
 /* ---------- Fase 2: Vencimientos y Tarjetas ---------- */
 const monto=(ars,usd)=>`${ars||!usd?money(ars):''}${usd?`<div class="${ars?'sub':''}">${money(usd,'USD')}</div>`:''}`;
@@ -369,8 +396,8 @@ function vConsumos(d){
   const ant=n=>{const c=prev&&prev.cats.find(x=>x.n===n);return c?c.v:null};
   let h=`<div class="tools"><select onchange="S.cmes=this.value;go('consumos')">${ms.slice().reverse().map(x=>`<option value="${x.k}" ${x.k===m.k?'selected':''}>${mesK(x.k)}</option>`).join('')}</select></div>`;
   h+=`<div class="hero"><small>Consumo de ${esc(mesTxt(m.k).split(' ')[0].toLowerCase())}</small><b>${money(tot)}</b><div class="usd">Incluye las cuotas con tarjeta del mes</div></div>`;
-  h+=`<div class="card"><h2>Por categoría</h2>${cats.map(c=>{const a=ant(c.n),dif=a?Math.round((c.v-a)/a*100):null;
-    return `<div class="row" style="display:block"><div style="display:flex;gap:12px"><div class="g"><div>${esc(c.n)}</div><div class="sub">${(c.v/tot*100).toFixed(1).replace('.',',')}%${dif!=null?` · <span class="${dif>0?'neg':'pos'}">${dif>0?'+':''}${dif}%</span> vs. mes anterior`:''}</div></div><div class="r">${money(c.v)}${c.usd?`<div class="sub">${money(c.usd,'USD')}</div>`:''}</div></div><div class="prog"><i style="width:${Math.round(c.v/max*100)}%;background:${colCat(c.n)}"></i></div></div>`}).join('')}</div>`;
+  h+=`<div class="card"><h2>Por categoría</h2><p class="nota">Tocá una categoría para ver sus movimientos.</p>${cats.map(c=>{const a=ant(c.n),dif=a?Math.round((c.v-a)/a*100):null;
+    return `<div class="row tap" style="display:block" data-cat="${esc(c.n)}" onclick="verCat(this.dataset.cat,'${m.k}','consumos')"><div style="display:flex;gap:12px"><div class="g"><div>${esc(c.n)}</div><div class="sub">${(c.v/tot*100).toFixed(1).replace('.',',')}%${dif!=null?` · <span class="${dif>0?'neg':'pos'}">${dif>0?'+':''}${dif}%</span> vs. mes anterior`:''}</div></div><div class="r">${money(c.v)}${c.usd?`<div class="sub">${money(c.usd,'USD')}</div>`:''}</div></div><div class="prog"><i style="width:${Math.round(c.v/max*100)}%;background:${colCat(c.n)}"></i></div></div>`}).join('')}</div>`;
   if(pt)h+=`<div class="card"><div class="kv"><span>Pago de tarjetas (sale de la cuenta)</span>${money(pt.v)}</div></div>`;
   return h;
 }
