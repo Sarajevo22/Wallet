@@ -90,6 +90,10 @@ nav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;st
 .tap{cursor:pointer}
 .tap:active{opacity:.6}
 .tap .g div:first-child::after{content:' ›';color:var(--mu)}
+.bars div{cursor:default}
+.bars.tap div{cursor:pointer}
+.ic svg{width:34px;height:34px;display:block}
+.ic.logo{background:#2d373e}
 .chip.cat{display:flex;align-items:center;gap:6px}
 .chip.cat .x{opacity:.55;margin-left:2px}
 details summary{list-style:none;cursor:pointer;color:var(--mu);font-size:15px;font-weight:600}
@@ -116,7 +120,7 @@ const corto=f=>{const p=f.split('-');return new Date(p[0],p[1]-1,p[2]).toLocaleD
 /* ---------- Conexión con Apps Script (URL + clave guardadas en este iPhone) ---------- */
 const CFG={get(k){try{return localStorage.getItem('billetera_'+k)||''}catch(e){return ''}},set(k,v){try{localStorage.setItem('billetera_'+k,v)}catch(e){}}};
 // Nombre de la función de Apps Script -> [fn de la API, parámetros]
-const API={App_inicio:['inicio',['fresh']],App_movimientos:['movimientos',['mes','fresh']],App_vencimientos:['vencimientos',['fresh']],App_cuotas:['cuotas',['fresh']],App_prestamo:['prestamo',['fresh']],App_activos:['activos',['fresh']],App_ipc:['ipc',['fresh']],App_super:['super',['fresh']],App_resumenAnual:['resumenAnual',['fresh']],App_salario:['salario',['fresh']],App_cuotasMes:['cuotasMes',['mes','fresh']]};
+const API={App_inicio:['inicio',['fresh']],App_movimientos:['movimientos',['mes','fresh']],App_vencimientos:['vencimientos',['fresh']],App_cuotas:['cuotas',['fresh']],App_prestamo:['prestamo',['fresh']],App_activos:['activos',['fresh']],App_ipc:['ipc',['fresh']],App_super:['super',['fresh']],App_resumenAnual:['resumenAnual',['fresh']],App_salario:['salario',['fresh']],App_cuotasMes:['cuotasMes',['mes','fresh']],App_cuotasPorMes:['cuotasPorMes',['fresh']],App_superMes:['superMes',['fresh']]};
 async function run(fn,...a){
   const url=CFG.get('url'),key=CFG.get('key');
   if(!url||!key){config();throw new Error('Falta configurar la conexión')}
@@ -149,9 +153,11 @@ const IC={
 const TABS=[['inicio','Inicio'],['movs','Movimientos'],['venc','Vencimientos'],['activos','Activos'],['mas','Más']];
 // [texto, pestaña] o [texto, número de fase si todavía no existe]
 const MENU=[['Tarjetas','tarj'],['Cuotas','cuotas'],['Préstamo','prest'],['Súper','super'],['Resumen Anual','anual'],['Consumos por categoría','consumos'],['Salario','salario'],['Inflación','ipc'],['Configuración','config']];
-const S={tab:'inicio',mes:'',tipo:'Todos',q:'',mov:null,venc:null,cmes:'',cat:'',volver:'',cuo:null};
+const S={tab:'inicio',mes:'',tipo:'Todos',q:'',mov:null,venc:null,cmes:'',cat:'',volver:'',cuo:null,ssub:'',sup:null,smes:null,an:null,ames:'',sal:null,sali:-1,cq:null,cpm:null,cuom:''};
 // Días hasta una fecha en palabras
 const enDias=n=>n===0?'Hoy':n===1?'Mañana':n===-1?'Ayer':n<0?`Hace ${-n} días`:`En ${n} días`;
+// Mes en curso 'aaaa-mm' según la hora del iPhone
+const hoyK=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')};
 const mesCorto=k=>{const p=k.split('-');return new Date(p[0],p[1]-1,1).toLocaleDateString('es-AR',{month:'short'}).replace('.','')};
 
 function nav(){
@@ -190,7 +196,9 @@ async function go(tab,fresh){
       v.innerHTML=vVenc(tab);
     }else if(tab==='cuotas'){
       $('#ttl').textContent='Cuotas';v.innerHTML=cargando;
-      v.innerHTML=vCuotas(await run('App_cuotas',!!fresh));
+      const r=await Promise.all([run('App_cuotas',!!fresh),run('App_cuotasPorMes',!!fresh)]);
+      S.cq=r[0];S.cpm=r[1];if(!S.cpm.meses.find(m=>m.k===S.cuom))S.cuom=(S.cpm.meses[0]||{}).k||'';
+      v.innerHTML=vCuotas(S.cq);
     }else if(tab==='prest'){
       $('#ttl').textContent='Préstamo';v.innerHTML=cargando;
       v.innerHTML=vPrest(await run('App_prestamo',!!fresh));
@@ -202,6 +210,7 @@ async function go(tab,fresh){
       if(tab==='config'){config();return}
       if(!P)return;
       $('#ttl').textContent=P[0];v.innerHTML=cargando;
+      if(tab==='super'){S.ssub='';const r=await Promise.all([run('App_super',!!fresh),run('App_superMes',!!fresh)]);S.sup=r[0];S.smes=r[1];v.innerHTML=vSuper(S.sup);return}
       v.innerHTML=P[2](await run(P[1],!!fresh));
     }
   }catch(e){falla(e)}
@@ -217,7 +226,6 @@ function vInicio(d){
   h+=`<div class="two"><div class="card"><small>Ingresos</small><b class="pos">${ppal(d.ing)}</b>${usdSub(d.ing)}</div>`;
   h+=`<div class="card"><small>${salLbl}</small><b class="${salCls}">${ppal(sal)}</b>${usdSub(sal)}</div></div>`;
   if(tot>0)h+=`<div class="card"><h2>${esc(d.catsTitulo)}</h2>${d.catsNota?`<p class="nota">${esc(d.catsNota)}</p>`:''}${dona(d.cats,tot,d.mes)}${d.cats.map((c,i)=>`<div class="row tap" data-cat="${esc(c.n)}" onclick="verCat(this.dataset.cat,'${d.mes}','inicio')"><span class="dot" style="background:${COL[i%COL.length]}"></span><div class="g"><div>${esc(c.n)}</div></div><div class="r">${money(c.v)}<div class="sub">${(c.v/tot*100).toFixed(1).replace('.',',')}%${c.usd?` · ${money(c.usd,'USD')}`:''}</div></div></div>`).join('')}</div>`;
-  if(d.venc.length)h+=`<div class="card"><h2>Próximos vencimientos</h2>${d.venc.map(x=>`<div class="row"><div class="ic${x.vencido?' late':''}" style="font-size:12px;text-align:center;line-height:1.1">${esc(corto(x.f))}</div><div class="g"><div>${esc(x.item)}</div><div class="sub${x.vencido?' neg':''}">${x.vencido?'Vencido · ':''}${esc(x.cat)}</div></div><div class="r">${x.ars?money(x.ars):''}${x.usd?`<div class="sub">${money(x.usd,'USD')}</div>`:''}</div></div>`).join('')}</div>`;
   (d.secciones||[]).forEach(s=>{
     h+=`<div class="card"><h2>${esc(s.titulo)}</h2>${s.filas.map(f=>`<div class="row"><div class="g"><div>${esc(f.label)}</div></div><div class="r">${esc(f.texto)}</div></div>`).join('')}</div>`;
   });
@@ -283,6 +291,15 @@ function vVencLista(d){
   if(d.pagados.length)h+=`<div class="card"><details><summary>Pagados (${d.pagados.length})</summary>${d.pagados.map(fila).join('')}</details></div>`;
   return h;
 }
+// Logo de la red de la tarjeta (Visa, Mastercard, Amex), dibujado en SVG con el estilo de la app
+function logoRed(n){
+  if(/master/i.test(n))return '<svg viewBox="0 0 40 40"><circle cx="15.5" cy="20" r="9" fill="#eb001b"/><circle cx="24.5" cy="20" r="9" fill="#f79e1b" fill-opacity=".9"/></svg>';
+  if(/visa/i.test(n))return '<svg viewBox="0 0 40 40"><text x="20" y="25" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="13.5" font-weight="900" font-style="italic" fill="#eef3f5" letter-spacing=".3">VISA</text><rect x="9" y="27.5" width="22" height="2" rx="1" fill="#f7b600"/></svg>';
+  if(/amex|american/i.test(n))return '<svg viewBox="0 0 40 40"><rect x="4" y="10" width="32" height="20" rx="4" fill="#2e77bc"/><text x="20" y="23.6" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="9.5" font-weight="900" fill="#fff" letter-spacing=".4">AMEX</text></svg>';
+  return '<svg viewBox="0 0 40 40" fill="none" stroke="#8d99a1" stroke-width="2"><rect x="7" y="11" width="26" height="18" rx="3"/><path d="M7 17h26"/></svg>';
+}
+// Color de cada banco (si no está, uno fijo según el nombre)
+const colBanco=b=>/galicia/i.test(b)?'#f58220':/patagonia/i.test(b)?'#1f6fb5':/naci[oó]n/i.test(b)?'#3a8fd6':/santander/i.test(b)?'#ec0000':/bbva|franc[eé]s/i.test(b)?'#1973b8':/macro/i.test(b)?'#3d7fc1':colCat(b);
 function vTarjetas(d){
   if(!d.tarjetas.length)return '<div class="empty"><b>Sin tarjetas</b>No hay datos en la pestaña Tarjetas.</div>';
   const tot=d.tarjetas.reduce((a,t)=>({ars:a.ars+t.ars,usd:a.usd+t.usd}),{ars:0,usd:0});
@@ -292,24 +309,24 @@ function vTarjetas(d){
     const kv=[['Cierre',t.cierre?corto(t.cierre)+(cerrada?' (cerrado)':''):'—'],['Vencimiento',t.venc?corto(t.venc):'—']];
     if(t.pcierre)kv.push(['Próximo cierre',corto(t.pcierre)]);
     if(t.pvenc)kv.push(['Próximo vencimiento',corto(t.pvenc)]);
-    return `<div class="card"><div class="row" style="padding-top:0"><div class="ic">${esc(t.banco.charAt(0))}</div><div class="g"><div>${esc(t.n)}</div><div class="sub">${esc(t.banco)}</div></div><div class="r">${monto(t.ars,t.usd)}</div></div>${kv.map(x=>`<div class="kv"><span>${x[0]}</span>${esc(x[1])}</div>`).join('')}</div>`;
+    return `<div class="card"><div class="row" style="padding-top:0"><div class="ic logo">${logoRed(t.n)}</div><div class="g"><div>${esc(t.n)}</div><div class="sub"><span class="cdot" style="background:${colBanco(t.banco)}"></span>${esc(t.banco)}</div></div><div class="r">${monto(t.ars,t.usd)}</div></div>${kv.map(x=>`<div class="kv"><span>${x[0]}</span>${esc(x[1])}</div>`).join('')}</div>`;
   }).join('');
   return h;
 }
 
 /* ---------- Fase 2: Cuotas ---------- */
+function selCuota(i){S.cuom=S.cpm.meses[i].k;$('#view').innerHTML=vCuotas(S.cq)}
 function vCuotas(d){
-  let h=`<div class="hero"><small>Cuotas de ${esc(mesTxt(d.mes).split(' ')[0].toLowerCase())}</small><b>${money(d.totalMes)}</b><div class="usd">${d.items.length} compras en cuotas</div></div>`;
-  if(d.meses.length){
-    const max=Math.max(...d.meses.map(m=>m.v),1);
-    h+=`<div class="card"><h2>Compromiso por mes</h2><div class="bars">${d.meses.map((m,i)=>`<div class="${i===0?'on':''}"><i style="height:${Math.round(m.v/max*100)}%"></i><small>${esc(mesCorto(m.k))}</small></div>`).join('')}</div>${d.meses.slice(0,4).map(m=>`<div class="kv"><span>${esc(mesTxt(m.k))}</span>${money(m.v)}</div>`).join('')}</div>`;
-  }
-  if(d.items.length)h+=`<div class="card"><h2>Compras en curso</h2>${d.items.map(x=>{
-    const pct=x.cuotas?Math.min(100,Math.round(x.pagas/x.cuotas*100)):0;
-    const ult=x.rest<=0?'<span class="tag blue">Última</span>':'';
-    return `<div class="row" style="display:block"><div style="display:flex;gap:12px;align-items:center"><div class="g"><div>${esc(x.n)}${ult}</div><div class="sub">${esc(x.cat)} · ${x.pagas} de ${x.cuotas} cuotas${x.fin?` · hasta ${esc(mesTxt(x.fin).toLowerCase())}`:''}</div></div><div class="r">${money(x.vc)}<div class="sub">de ${money(x.total)}</div></div></div><div class="prog"><i style="width:${pct}%"></i></div></div>`;
+  const ms=(S.cpm&&S.cpm.meses)||[];
+  if(!ms.length)return '<div class="empty"><b>Sin cuotas</b>No hay compras en cuotas en curso.</div>';
+  const i=Math.max(0,ms.findIndex(m=>m.k===S.cuom)),m=ms[i],esHoy=m.k===S.cpm.mes;
+  let h=`<div class="hero"><small>Cuotas de ${esc(mesTxt(m.k).split(' ')[0].toLowerCase())}${esHoy?'':' '+esc(m.k.slice(0,4))}</small><b>${money(m.v)}</b><div class="usd">${m.items.length} ${m.items.length===1?'compra':'compras'} en cuotas</div></div>`;
+  h+=`<div class="card"><h2>Compromiso por mes</h2>${barras(ms.map(x=>({v:x.v,l:mesCorto(x.k)})),i,'selCuota')}<p class="sub" style="margin-top:6px">Tocá un mes para ver sus cuotas.</p></div>`;
+  h+=`<div class="card"><h2>Cuotas de ${mesK(m.k).toLowerCase()}</h2>${m.items.map(x=>{
+    const pct=x.cuotas&&x.nro?Math.round(x.nro/x.cuotas*100):0;
+    const ult=x.nro&&x.nro===x.cuotas?'<span class="tag blue">Última</span>':'';
+    return `<div class="row" style="display:block"><div style="display:flex;gap:12px;align-items:center"><div class="g"><div>${esc(x.n)}${ult}</div><div class="sub"><span class="cdot" style="background:${colCat(x.cat)}"></span>${esc(x.cat)}${x.nro?` · cuota ${x.nro} de ${x.cuotas}`:x.cuotas?` · ${x.cuotas} cuotas`:''}</div></div><div class="r">${money(x.v)}<div class="sub">de ${money(x.total)}</div></div></div><div class="prog"><i style="width:${pct}%"></i></div></div>`;
   }).join('')}</div>`;
-  else h+='<div class="empty"><b>Sin cuotas</b>No hay compras en cuotas en curso.</div>';
   return h;
 }
 
@@ -332,7 +349,7 @@ const pctNum=s=>{const n=parseFloat(String(s||'').replace(/[^0-9,\-]/g,'').repla
 const pctCls=s=>!s?'':(/^\s*-/.test(s)?'neg':'pos');
 const mesK=k=>esc(mesTxt(k));
 function seg2(a,b,on){return `<div class="seg"><button class="${on===a[0]?'on':''}" onclick="go('${a[0]}')">${a[1]}</button><button class="${on===b[0]?'on':''}" onclick="go('${b[0]}')">${b[1]}</button></div>`}
-function barras(items,on){const max=Math.max(...items.map(m=>Math.abs(m.v)),1);return `<div class="bars">${items.map((m,i)=>`<div class="${i===on?'on':''}"><i style="height:${Math.round(Math.abs(m.v)/max*100)}%"></i><small>${esc(m.l)}</small></div>`).join('')}</div>`}
+function barras(items,on,click){const max=Math.max(...items.map(m=>Math.abs(m.v)),1);return `<div class="bars${click?' tap':''}">${items.map((m,i)=>`<div class="${i===on?'on':''}"${click?` onclick="${click}(${i})"`:''}><i style="height:${Math.round(Math.abs(m.v)/max*100)}%"></i><small>${esc(m.l)}</small></div>`).join('')}</div>`}
 
 /* ---------- Activos + Inflación ---------- */
 function vActivos(d){
@@ -359,29 +376,51 @@ function vIpc(d){
 }
 
 /* ---------- Súper ---------- */
+function verSub(n){S.ssub=n;$('#view').innerHTML=vSuper(S.sup);window.scrollTo(0,0)}
 function vSuper(d){
+  if(S.ssub)return vSuperSub(d);
   const tot=d.subs.reduce((a,s)=>a+s.mes,0),anual=d.subs.reduce((a,s)=>a+s.anual,0);
   let h=`<div class="hero"><small>Súper en ${esc(mesTxt(d.mes).split(' ')[0].toLowerCase())}</small><b>${money(tot)}</b><div class="usd">En el año: ${money(anual)}</div></div>`;
   if(d.meses.length)h+=`<div class="card"><h2>Por mes</h2>${barras(d.meses.map(m=>({v:m.v,l:mesCorto(m.k)})),d.meses.findIndex(m=>m.k===d.mes))}</div>`;
   if(d.subs.length){const max=Math.max(...d.subs.map(s=>s.mes),1);
-    h+=`<div class="card"><h2>Por subcategoría</h2>${d.subs.map(s=>`<div class="row" style="display:block"><div style="display:flex;gap:12px"><div class="g"><div>${esc(s.n)}</div><div class="sub">En el año ${money(s.anual)}</div></div><div class="r">${money(s.mes)}</div></div><div class="prog"><i style="width:${Math.round(s.mes/max*100)}%;background:${colCat(s.n)}"></i></div></div>`).join('')}</div>`;}
+    h+=`<div class="card"><h2>Por subcategoría</h2><p class="nota">Tocá una subcategoría para ver sus productos del mes.</p>${d.subs.map(s=>`<div class="row tap" style="display:block" data-sub="${esc(s.n)}" onclick="verSub(this.dataset.sub)"><div style="display:flex;gap:12px"><div class="g"><div>${esc(s.n)}</div><div class="sub">En el año ${money(s.anual)}</div></div><div class="r">${money(s.mes)}</div></div><div class="prog"><i style="width:${Math.round(s.mes/max*100)}%;background:${colCat(s.n)}"></i></div></div>`).join('')}</div>`;}
   if(d.compras.length){
-    let k='',abierto=false;h+='<h2 class="dn" style="font-size:15px;font-weight:600">Últimas compras</h2>';
-    d.compras.forEach(c=>{const key=c.f+'|'+c.com;
-      if(key!==k){if(abierto)h+='</div>';k=key;h+=`<div class="dn">${esc(diaTxt(c.f))} · ${esc(c.com)}</div><div class="card" style="padding:4px 16px">`;abierto=true}
-      h+=`<div class="row"><div class="g"><div>${esc(c.p)}</div><div class="sub"><span class="cdot" style="background:${colCat(c.sub)}"></span>${esc(c.sub)}</div></div><div class="r">${money(c.m)}</div></div>`;});
-    h+='</div>';
+    h+='<h2 class="dn" style="font-size:15px;font-weight:600">Últimas compras</h2>'+comprasSuper(d.compras,true);
   }
+  return h;
+}
+// Lista de compras del súper agrupada por día y comercio
+function comprasSuper(cs,conSub){
+  let h='',k='',abierto=false;
+  cs.forEach(c=>{const key=c.f+'|'+c.com;
+    if(key!==k){if(abierto)h+='</div>';k=key;h+=`<div class="dn">${esc(diaTxt(c.f))} · ${esc(c.com)}</div><div class="card" style="padding:4px 16px">`;abierto=true}
+    h+=`<div class="row"><div class="g"><div>${esc(c.p)}</div>${conSub?`<div class="sub"><span class="cdot" style="background:${colCat(c.sub)}"></span>${esc(c.sub)}</div>`:''}</div><div class="r">${money(c.m)}</div></div>`;});
+  return h+(abierto?'</div>':'');
+}
+// Productos de una subcategoría en el mes actual
+function vSuperSub(d){
+  const eq=(a,b)=>String(a).trim().toLowerCase()===String(b).trim().toLowerCase();
+  const it=((S.smes&&S.smes.items)||[]).filter(c=>eq(c.sub,S.ssub)),s=d.subs.find(x=>eq(x.n,S.ssub));
+  const tot=s?s.mes:it.reduce((a,c)=>a+c.m,0);
+  let h=`<div class="tools"><button class="chip" onclick="S.ssub='';$('#view').innerHTML=vSuper(S.sup)">‹ Volver</button><button class="chip on cat" onclick="S.ssub='';$('#view').innerHTML=vSuper(S.sup)"><span class="cdot" style="margin:0;background:${colCat(S.ssub)}"></span>${esc(S.ssub)}<span class="x">✕</span></button></div>`;
+  h+=`<div class="hero"><small>${esc(S.ssub)} en ${esc(mesTxt(d.mes).split(' ')[0].toLowerCase())}</small><b>${money(tot)}</b><div class="usd">${it.length} ${it.length===1?'producto':'productos'}${s?' · en el año '+money(s.anual):''}</div></div>`;
+  h+=it.length?comprasSuper(it,false):'<div class="empty"><b>Sin productos este mes</b>No hay compras de esta subcategoría en el mes.</div>';
   return h;
 }
 
 /* ---------- Resumen Anual ---------- */
+function selAnual(i){S.ames=S.an.meses[i].k;$('#view').innerHTML=vAnual(S.an)}
 function vAnual(d){
+  S.an=d;
   if(!d.meses.length)return '<div class="empty"><b>Sin datos</b>No hay meses cargados en Resumen Anual.</div>';
-  const ult=d.meses[d.meses.length-1];
-  let h=`<div class="hero"><small>Saldo de ${esc(mesTxt(ult.k).split(' ')[0].toLowerCase())}</small><b class="${ult.sal&&ult.sal.ars<0?'neg':''}">${ppal(ult.sal)}</b>${usdSub(ult.sal,'usd')}</div>`;
-  h+=`<div class="card"><h2>Gasto por mes</h2>${barras(d.meses.map(m=>({v:m.gas?m.gas.ars:0,l:mesCorto(m.k)})),d.meses.length-1)}${d.corte?`<div class="sub">Desde el ${esc(d.corte)} el gasto cuenta el pago de las tarjetas, no cada compra.</div>`:''}</div>`;
-  h+=d.meses.slice().reverse().map(m=>`<div class="card"><h2>${mesK(m.k)}</h2><div class="kv"><span>Ingreso</span><div class="r pos">${ppal(m.ing)}${usdSub(m.ing)}</div></div><div class="kv"><span>Gasto</span><div class="r">${ppal(m.gas)}${usdSub(m.gas)}</div></div><div class="kv"><span>Saldo</span><div class="r ${m.sal&&m.sal.ars<0?'neg':''}">${ppal(m.sal)}${usdSub(m.sal)}</div></div></div>`).join('');
+  const hoy=hoyK();
+  if(!d.meses.find(m=>m.k===S.ames))S.ames=(d.meses.find(m=>m.k===hoy)||d.meses[d.meses.length-1]).k;
+  const i=d.meses.findIndex(m=>m.k===S.ames),m=d.meses[i];
+  let h=`<div class="hero"><small>Saldo de ${esc(mesTxt(m.k).split(' ')[0].toLowerCase())}</small><b class="${m.sal&&m.sal.ars<0?'neg':''}">${ppal(m.sal)}</b>${usdSub(m.sal,'usd')}</div>`;
+  h+=`<div class="card"><h2>Gasto por mes</h2>${barras(d.meses.map(x=>({v:x.gas?x.gas.ars:0,l:mesCorto(x.k)})),i,'selAnual')}<p class="sub" style="margin-top:6px">Tocá un mes para ver su detalle.${d.corte?` Desde el ${esc(d.corte)} el gasto cuenta el pago de las tarjetas, no cada compra.`:''}</p></div>`;
+  h+=`<div class="card"><h2>${mesK(m.k)}</h2><div class="kv"><span>Ingreso</span><div class="r pos">${ppal(m.ing)}${usdSub(m.ing)}</div></div><div class="kv"><span>Gasto</span><div class="r">${ppal(m.gas)}${usdSub(m.gas)}</div></div><div class="kv"><span>Saldo</span><div class="r ${m.sal&&m.sal.ars<0?'neg':''}">${ppal(m.sal)}${usdSub(m.sal)}</div></div></div>`;
+  const cats=m.cats.filter(c=>!/^pago tarjeta$/i.test(c.n));
+  if(cats.length)h+=`<div class="card"><h2>Principales consumos</h2>${cats.slice(0,4).map(c=>`<div class="row tap" data-cat="${esc(c.n)}" onclick="verCat(this.dataset.cat,'${m.k}','anual')"><span class="dot" style="background:${colCat(c.n)}"></span><div class="g"><div>${esc(c.n)}</div></div><div class="r">${money(c.v)}</div></div>`).join('')}<button class="chip" style="width:100%;margin-top:10px;background:#2d373e" onclick="S.cmes='${m.k}';go('consumos')">Ver todas las categorías</button></div>`;
   return h;
 }
 
@@ -403,16 +442,21 @@ function vConsumos(d){
 }
 
 /* ---------- Salario ---------- */
+function selSal(i){S.sali=i;$('#view').innerHTML=vSalario(S.sal)}
 function vSalario(d){
+  S.sal=d;
   const k=d.kpis;let h='';
   if(k[0])h+=`<div class="hero"><small>${esc(cap(k[0].k.toLowerCase()))}</small><b>${esc(k[0].v)}</b><div class="usd">${esc(k[0].n1)}${k[0].n2?' · '+esc(k[0].n2):''}</div></div>`;
   if(k.length>1)h+=`<div class="two">${k.slice(1).map(x=>`<div class="card"><small>${esc(cap(x.k.toLowerCase()))}</small><b>${esc(x.v)}</b><div class="sub" style="margin-top:4px">${esc(x.n1)}</div></div>`).join('')}</div>`;
+  if(d.hist.length){
+    // Por defecto el período del mes en curso; si no está, el último cargado
+    if(S.sali<0||S.sali>=d.hist.length){const act=mesTxt(hoyK()).toLowerCase();const j=d.hist.findIndex(x=>String(x.p).trim().toLowerCase()===act);S.sali=j>=0?j:d.hist.length-1}
+    const x=d.hist[S.sali];
+    h+=`<div class="card"><h2>Evolución del neto</h2>${barras(d.hist.map(x=>({v:x.neto,l:x.p.slice(0,3).toLowerCase()+' '+x.p.slice(-2)})),S.sali,'selSal')}<p class="sub" style="margin-top:6px">Tocá un mes para ver su detalle.</p></div>`;
+    h+=`<div class="card"><h2>${esc(x.p)}</h2><div class="kv"><span>Neto</span><b>${money(x.neto)}</b></div><div class="kv"><span>Bruto</span>${money(x.bruto)}</div><div class="kv"><span>Descuentos</span>${money(x.desc)}</div><div class="kv"><span>Aumento</span><span class="${x.inc&&x.inc!=='0,00%'?'pos':''}">${x.inc&&x.inc!=='0,00%'?'+'+esc(x.inc):'—'}</span></div></div>`;
+  }
   const prox=d.sim.find(s=>/pr[oó]ximo/i.test(s.p)),dif=d.sim.find(s=>/diferencia/i.test(s.p));
   if(prox)h+=`<div class="card"><h2>Próximo aumento (simulado)</h2><div class="kv"><span>Aumento</span>${esc(prox.inc)}</div><div class="kv"><span>Neto proyectado</span>${money(prox.neto)}</div>${dif?`<div class="kv"><span>Diferencia de bolsillo</span><span class="pos">+${money(dif.neto)}</span></div>`:''}<div class="kv"><span>Bruto proyectado</span>${money(prox.bruto)}</div></div>`;
-  if(d.hist.length){
-    h+=`<div class="card"><h2>Evolución del neto</h2>${barras(d.hist.map(x=>({v:x.neto,l:x.p.slice(0,3).toLowerCase()+' '+x.p.slice(-2)})),d.hist.length-1)}</div>`;
-    h+=`<div class="card"><h2>Historial</h2>${d.hist.slice().reverse().map(x=>`<div class="row"><div class="g"><div>${esc(x.p)}</div><div class="sub">Bruto ${money(x.bruto)} · descuentos ${money(x.desc)}</div></div><div class="r">${money(x.neto)}<div class="sub">${x.inc&&x.inc!=='0,00%'?'+'+esc(x.inc):'—'}</div></div></div>`).join('')}</div>`;
-  }
   return h;
 }
 
