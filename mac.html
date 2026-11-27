@@ -167,6 +167,7 @@ button{cursor:pointer}
 .row.tap:hover{background:#2a343b}
 .row.tap:hover+.row,.row.tap:hover{border-top-color:transparent}
 circle.tap:hover{stroke-width:24}
+.row.tap.sel{background:#2f3a42}
 .chip.cat{display:flex;align-items:center;gap:8px}
 .chip .x{opacity:.6;font-size:13px}
 /* Inicio de escritorio */
@@ -233,7 +234,7 @@ function run(fn,...a){const m=API[fn],args={};m[1].forEach((p,i)=>{if(a[i])args[
 
 const S={tab:'inicio',mes:'',tipo:'Todos',q:'',mov:null,ven:null,venc:null,cmes:'',L:null,ult:{},cat:'',volver:'',cuo:null};
 const SIDE=[['',[['inicio','Inicio'],['movs','Movimientos',1],['venc','Vencimientos',1],['tarj','Tarjetas',1]]],
- ['Más',[['cuotas','Cuotas'],['prest','Préstamo'],['activos','Activos'],['ipc','Inflación'],['super','Súper'],['anual','Resumen Anual'],['consumos','Consumos por categoría'],['salario','Salario']]],
+ ['Más',[['cuotas','Cuotas'],['prest','Préstamo'],['activos','Activos',1],['ipc','Inflación'],['super','Súper'],['anual','Resumen Anual'],['consumos','Consumos por categoría'],['salario','Salario']]],
  ['',[['config','Configuración']]]];
 function nav(){
   $('#side').innerHTML='<div class="brand"><img src="icon-180.png" alt="">Billetera</div>'+SIDE.map(g=>(g[0]?`<h3>${g[0]}</h3>`:'<h3></h3>')+g[1].map(t=>`<button class="${S.tab===t[0]?'on':''}" onclick="${t[0]==='movs'?'S.cat=\'\';S.volver=\'\';':''}go('${t[0]}')">${t[1]}${t[2]?'<span class="ed">editable</span>':''}</button>`).join('')).join('');
@@ -448,7 +449,7 @@ function vSalario(d){
 async function go(tab,fresh){
   if(tab==='config')return config();
   S.tab=tab;nav();window.scrollTo(0,0);
-  const v=$('#view');v.className=tab==='movs'||tab==='venc'||tab==='tarj'||tab==='inicio'?'wide':'';$('#acts').innerHTML='';
+  const v=$('#view');v.className=['movs','venc','tarj','inicio','activos','super'].includes(tab)?'wide':'';$('#acts').innerHTML='';
   const T={inicio:['Inicio','App_inicio',vInicioMac],cuotas:['Cuotas','App_cuotas',vCuotas],prest:['Préstamo','App_prestamo',vPrest],
     activos:['Activos','App_activos',vActivos],ipc:['Inflación','App_ipc',vIpc],super:['Súper','App_super',vSuper],
     anual:['Resumen Anual','App_resumenAnual',vAnual],consumos:['Consumos por categoría','App_resumenAnual',vConsumos],salario:['Salario','App_salario',vSalario]};
@@ -466,6 +467,16 @@ async function go(tab,fresh){
       const d=await post('edVencs');if(S.tab!=='venc')return;
       S.ven=d;v.innerHTML=vVencEd();
       $('#acts').innerHTML='<button class="btn pri" onclick="formVencNuevo()" title="Nuevo vencimiento (N)">+ Nuevo vencimiento</button>';
+    }else if(tab==='activos'){
+      $('#ttl').textContent='Activos';v.innerHTML=cargando;
+      const [d,e,L]=await Promise.all([run('App_activos',!!fresh),post('edActivos'),fresh||!S.L?post('edListas'):S.L]);if(S.tab!=='activos')return;
+      S.actR=d;S.act=e;S.L=L;v.innerHTML=vActivosEd();
+      $('#acts').innerHTML='<button class="btn pri" onclick="formAct()">+ Nuevo activo</button>';
+    }else if(tab==='super'){
+      $('#ttl').textContent='Súper';v.innerHTML=cargando;
+      const [d,m]=await Promise.all([run('App_super',!!fresh),post('superMes',{fresh:!!fresh}).catch(()=>null)]);if(S.tab!=='super')return;
+      // Sin AppFase4.gs: usa las últimas compras del mes en curso
+      S.supR=d;S.smes=m||{mes:d.mes,items:d.compras.filter(c=>c.f.slice(0,7)===d.mes)};S.ssub='';v.innerHTML=vSuperMac();
     }else if(tab==='tarj'){
       $('#ttl').textContent='Tarjetas';v.innerHTML=cargando;
       const d=await post('edTarjetas');if(S.tab!=='tarj')return;
@@ -550,7 +561,7 @@ function optsCat(sel){
   return o+Object.keys(g).map(t=>`<optgroup label="${esc(t)}">${g[t].map(n=>`<option ${n===sel?'selected':''}>${esc(n)}</option>`).join('')}</optgroup>`).join('');
 }
 function abrir(h){$('#mp').innerHTML=h;$('#modal').classList.add('on')}
-function cerrar(){$('#modal').classList.remove('on');S.edit=null}
+function cerrar(){$('#modal').classList.remove('on');S.edit=null;document.querySelector('#modal .p').style.maxWidth=''}
 function formMov(fila){
   if(!S.L)return;
   const x=fila?movDe(fila):null;S.edit=x;
@@ -741,6 +752,105 @@ async function guardarTarj(){
   ocupado(true);
   try{await post('edTarjetaGuardar',{fila:t.fila,n:t.n,firma:t.firma,campos:campos});cerrar();toast('Tarjeta actualizada');S.tj=await post('edTarjetas');if(S.tab==='tarj')$('#view').innerHTML=vTarjEd()}
   catch(e){ocupado(false);$('#fErr').textContent=e.message}
+}
+
+/* ---------- Activos (editable) ---------- */
+const pct=n=>n===''||n==null?'':(Math.round(n*10000)/100).toString().replace('.',',')+'%';
+function vActivosEd(){
+  const d=S.actR,e=S.act;
+  let h=vActivos(Object.assign({},d,{activos:[],cerrados:[]})).replace('<div class="empty"><b>Sin activos</b>No hay activos con estado Activo.</div>','');
+  const act=e.items.filter(x=>!/^cerrad/i.test(x.est)),cer=e.items.filter(x=>/^cerrad/i.test(x.est));
+  const tabla=items=>`<table class="tb"><thead><tr><th>Activo</th><th class="r">Cantidad</th><th class="r">Precio compra</th><th class="r">Precio actual</th><th class="r">Invertido</th><th class="r">Actual</th><th class="r">Rend.</th><th>Desde</th><th></th></tr></thead><tbody>${items.map(x=>`<tr class="it" onclick="formAct(${x.fila})"><td><div>${esc(x.n)}</div><div class="sub">${esc(x.tipo)}${x.venc?' · vence '+esc(corto(x.venc)):''}${x.tna!==''?' · TNA '+pct(x.tna):''}</div></td><td class="r">${x.cant===''?'<span class="sub">—</span>':x.cant.toLocaleString('es-AR',{maximumFractionDigits:4})}</td><td class="r">${x.pc===''?'<span class="sub">—</span>':money(x.pc,x.mon)}</td><td class="r">${x.pa===''?'<span class="sub">—</span>':money(x.pa,x.mon)}<div class="sub">${x.ed.pa?'manual':'automático'}${x.upd?' · '+esc(corto(x.upd)):''}</div></td><td class="r">${money(x.inv,x.mon)}</td><td class="r">${money(x.act,x.mon)}</td><td class="r ${pctCls(x.pct)}">${esc(x.pct||'—')}</td><td>${x.ini?esc(corto(x.ini)):'—'}</td><td class="ac"><button onclick="event.stopPropagation();formAporte(${x.fila},'Aporte')">Aporte</button><button onclick="event.stopPropagation();formAporte(${x.fila},'Retiro')">Retiro</button><button onclick="event.stopPropagation();formAct(${x.fila})">Editar</button></td></tr>`).join('')}</tbody></table>`;
+  h+=`<div class="tcard"><h2>Activos (${act.length})</h2>${act.length?tabla(act):'<p class="sub" style="padding:12px">No hay activos con estado Activo.</p>'}</div>`;
+  if(cer.length)h+=`<div class="tcard"><details><summary style="padding:12px">Cerrados (${cer.length})</summary>${tabla(cer)}</details></div>`;
+  h+='<p class="sub">Los precios los actualiza el script de precios, salvo los marcados como manual. Aportes y retiros se cargan como movimientos de Inversiones con el nombre del activo, y la planilla los suma sola.</p>';
+  return h;
+}
+function formAct(fila){
+  const x=fila?S.act.items.find(i=>i.fila===fila):null;S.edit=x;
+  const v=x||{n:'',tipo:'',cant:'',pc:'',pa:'',ini:hoyYmd(),venc:'',tna:'',mon:'ARS',est:'Activo',ed:{n:true,tipo:true,cant:true,pc:true,pa:false,ini:true,venc:true,tna:true,mon:true,est:true}};
+  const dis=k=>v.ed[k]?'':'disabled';
+  abrir(`<h2>${x?esc(x.n):'Nuevo activo'}</h2><form onsubmit="event.preventDefault();guardarAct()"><div class="fg">
+  ${x?'':`<label>Nombre<input id="aN" maxlength="60" required autocomplete="off" placeholder="Ej.: AL30, PF5 Banco del Sol"></label>`}
+  <label ${x?'class="s2"':''}>Tipo<select id="aT" ${dis('tipo')}>${opts(S.act.tipos,v.tipo,'Elegí…')}</select></label>
+  <label>Cantidad<input id="aC" inputmode="decimal" value="${esc(aTxt(v.cant))}" ${dis('cant')} autocomplete="off"></label>
+  <label>Precio de compra<input id="aPC" inputmode="decimal" value="${esc(aTxt(v.pc))}" ${dis('pc')} autocomplete="off"></label>
+  <label>Precio actual${x&&!v.ed.pa?' (automático)':''}<input id="aPA" inputmode="decimal" value="${esc(aTxt(v.pa))}" ${dis('pa')} autocomplete="off"></label>
+  <label>Moneda<select id="aM" ${dis('mon')}>${opts(['ARS','USD'],v.mon)}</select></label>
+  <label>Fecha de inicio<input type="date" id="aI" value="${esc(v.ini)}" ${dis('ini')}></label>
+  <label>Fecha de vencimiento<input type="date" id="aV" value="${esc(v.venc)}" ${dis('venc')}></label>
+  <label>TNA %<input id="aTNA" inputmode="decimal" value="${v.tna===''?'':esc(aTxt(Math.round(v.tna*10000)/100))}" placeholder="Ej.: 23" ${dis('tna')} autocomplete="off"></label>
+  <label>Estado<select id="aE" ${dis('est')}>${opts(['Activo','Cerrado'],v.est)}</select></label>
+  </div><div class="info">${x?'El nombre no se cambia acá porque los aportes y retiros lo usan para sumarse.':'Capital, rendimiento, días y TEA se calculan solos. El precio actual lo completa el script de precios.'}</div><div class="err" id="fErr"></div>
+  <div class="btns"><button type="button" class="btn" onclick="cerrar()">Cancelar</button><button class="btn pri">${x?'Guardar':'Agregar'}</button></div></form>`);
+  setTimeout(()=>{const e=$('#aN')||$('#aPA:not(:disabled)')||$('#aC');if(e)e.focus()},30);
+}
+async function guardarAct(){
+  const x=S.edit,a={};
+  try{
+    const num=(id,nombre)=>{const s=$(id).value.trim();if(!s)return '';const n=aNum(s);if(!isFinite(n)||n<0)throw new Error('Revisá '+nombre);return n};
+    const campos={tipo:()=>$('#aT').value,cant:()=>num('#aC','la cantidad'),pc:()=>num('#aPC','el precio de compra'),pa:()=>num('#aPA','el precio actual'),mon:()=>$('#aM').value,ini:()=>$('#aI').value,venc:()=>$('#aV').value,tna:()=>num('#aTNA','la TNA'),est:()=>$('#aE').value};
+    const ids={tipo:'#aT',cant:'#aC',pc:'#aPC',pa:'#aPA',mon:'#aM',ini:'#aI',venc:'#aV',tna:'#aTNA',est:'#aE'};
+    Object.keys(campos).forEach(k=>{if($(ids[k]).disabled)return;const val=campos[k]();
+      if(x){const prev=k==='tna'?(x.tna===''?'':Math.round(x.tna*10000)/100):x[k];if(val===prev)return}else if(val===''&&k!=='est')return;
+      a[k]=val});
+    if(!x){a.n=$('#aN').value.trim();if(!a.n)throw new Error('Falta el nombre');if(!a.tipo)throw new Error('Elegí el tipo')}
+  }catch(e){$('#fErr').textContent=e.message;return}
+  if(x&&!Object.keys(a).length){cerrar();return}
+  ocupado(true);
+  try{await post('edActivoGuardar',x?{fila:x.fila,n:x.n,firma:x.firma,act:a}:{act:a});cerrar();toast(x?'Activo actualizado':'Activo agregado');go('activos',true)}
+  catch(e){ocupado(false);$('#fErr').textContent=e.message}
+}
+function formAporte(fila,tipo){
+  const x=S.act.items.find(i=>i.fila===fila);if(!x)return;S.edit=x;
+  const cuentas=S.L?S.L.cuentas:[];
+  abrir(`<h2>${tipo} · ${esc(x.n)}</h2><form onsubmit="event.preventDefault();guardarAporte('${tipo}')"><div class="fg">
+  <label>Fecha<input type="date" id="pF" value="${hoyYmd()}" required></label>
+  <label>Monto (${esc(x.mon||'ARS')})<input id="pM" inputmode="decimal" placeholder="0,00" required autocomplete="off"></label>
+  <label class="s2">Cuenta<select id="pC">${opts(cuentas,S.ult.c&&cuentas.includes(S.ult.c)?S.ult.c:(cuentas.find(c=>/caja/i.test(c))||''),'Elegí…')}</select></label>
+  </div><div class="info">Se carga en Movimientos como “${tipo} ${esc(x.n)}”, categoría Inversiones. La planilla lo suma solo al activo.</div><div class="err" id="fErr"></div>
+  <div class="btns"><button type="button" class="btn" onclick="cerrar()">Cancelar</button><button class="btn pri">Cargar ${tipo.toLowerCase()}</button></div></form>`);
+  setTimeout(()=>$('#pM').focus(),30);
+}
+async function guardarAporte(tipo){
+  const x=S.edit,m=aNum($('#pM').value),c=$('#pC').value,f=$('#pF').value;
+  if(!f){$('#fErr').textContent='Falta la fecha';return}
+  if(!isFinite(m)||m<=0){$('#fErr').textContent='Revisá el monto';return}
+  if(!c){$('#fErr').textContent='Elegí la cuenta';return}
+  const cat=S.L&&S.L.categorias.find(k=>/^inversiones$/i.test(k.n));
+  if(!cat){$('#fErr').textContent='No encuentro la categoría Inversiones en la pestaña Categorías';return}
+  ocupado(true);
+  try{await post('edMovGuardar',{mov:{f:f,d:tipo+' '+x.n,m:m,mon:x.mon||'ARS',c:c,cat:cat.n,q:1,ex:false}});S.ult.c=c;cerrar();toast(tipo+' cargado');go('activos',true)}
+  catch(e){ocupado(false);$('#fErr').textContent=e.message}
+}
+
+/* ---------- Súper: clic en una subcategoría muestra sus productos del mes ---------- */
+function verSub(n){S.ssub=S.ssub===n?'':n;$('#view').innerHTML=vSuperMac()}
+function comprasTabla(cs,conSub){
+  let h='',k='';
+  cs.forEach(c=>{const key=c.f+'|'+c.com;
+    if(key!==k){k=key;h+=`<tr class="dia"><td colspan="${conSub?3:2}">${esc(diaTxt(c.f))} · ${esc(c.com)}</td></tr>`}
+    h+=`<tr><td class="ds">${esc(c.p)}</td>${conSub?`<td><span class="cdot" style="background:${colCat(c.sub)}"></span>${esc(c.sub)}</td>`:''}<td class="r">${money(c.m)}</td></tr>`;});
+  return `<table class="tb">${h}</table>`;
+}
+function vSuperMac(){
+  const d=S.supR,eq=(a,b)=>String(a).trim().toLowerCase()===String(b).trim().toLowerCase();
+  const tot=d.subs.reduce((a,x)=>a+x.mes,0),anual=d.subs.reduce((a,x)=>a+x.anual,0);
+  const mes=esc(mesTxt(d.mes).split(' ')[0].toLowerCase());
+  let h=`<div class="kpis" style="grid-template-columns:1.3fr 1fr"><div class="card big"><small>Súper en ${mes}</small><b>${money(tot)}</b></div><div class="card"><small>En el año</small><b>${money(anual)}</b></div></div>`;
+  let izq='';
+  if(d.meses.length)izq+=`<div class="card"><h2>Por mes</h2>${barras(d.meses.map(m=>({v:m.v,l:mesCorto(m.k)})),d.meses.findIndex(m=>m.k===d.mes))}</div>`;
+  if(d.subs.length){const max=Math.max(...d.subs.map(x=>x.mes),1);
+    izq+=`<div class="card"><h2>Por subcategoría</h2><p class="nota">Hacé clic en una subcategoría para ver sus productos del mes.</p>${d.subs.map(x=>`<div class="row tap${eq(x.n,S.ssub)?' sel':''}" style="display:block" data-sub="${esc(x.n)}" onclick="verSub(this.dataset.sub)"><div style="display:flex;gap:12px"><div class="g"><div>${esc(x.n)}</div><div class="sub">En el año ${money(x.anual)}</div></div><div class="r">${money(x.mes)}</div></div><div class="prog"><i style="width:${Math.round(x.mes/max*100)}%;background:${colCat(x.n)}"></i></div></div>`).join('')}</div>`;}
+  let der='';
+  if(S.ssub){
+    const it=((S.smes&&S.smes.items)||[]).filter(c=>eq(c.sub,S.ssub)),sb=d.subs.find(x=>eq(x.n,S.ssub));
+    const t=sb?sb.mes:it.reduce((a,c)=>a+c.m,0);
+    der+=`<div class="card"><div class="tools" style="margin-bottom:6px"><button class="chip on cat" onclick="verSub('')" title="Quitar filtro"><span class="cdot" style="margin:0;background:${colCat(S.ssub)}"></span>${esc(S.ssub)}<span class="x">✕</span></button></div><div class="kv" style="border:0"><span>${it.length} ${it.length===1?'producto':'productos'} en ${mes}${sb?' · en el año '+money(sb.anual):''}</span><b>${money(t)}</b></div>${it.length?comprasTabla(it,false):'<p class="sub">No hay compras de esta subcategoría en el mes.</p>'}</div>`;
+  }else if(d.compras.length){
+    der+=`<div class="card"><h2>Últimas compras</h2>${comprasTabla(d.compras.slice(0,60),true)}</div>`;
+  }
+  return h+`<div class="dash"><div>${izq}</div><div>${der}</div></div>`;
 }
 
 /* ---------- Teclado ---------- */
