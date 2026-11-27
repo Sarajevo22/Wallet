@@ -211,7 +211,7 @@ const API={App_inicio:['inicio',['fresh']],App_vencimientos:['vencimientos',['fr
 function run(fn,...a){const m=API[fn],args={};m[1].forEach((p,i)=>{if(a[i])args[p]=a[i]});return post(m[0],args)}
 
 const S={tab:'inicio',mes:'',tipo:'Todos',q:'',mov:null,ven:null,venc:null,cmes:'',L:null,ult:{}};
-const SIDE=[['',[['inicio','Inicio'],['movs','Movimientos',1],['venc','Vencimientos',1],['tarj','Tarjetas']]],
+const SIDE=[['',[['inicio','Inicio'],['movs','Movimientos',1],['venc','Vencimientos',1],['tarj','Tarjetas',1]]],
  ['Más',[['cuotas','Cuotas'],['prest','Préstamo'],['activos','Activos'],['ipc','Inflación'],['super','Súper'],['anual','Resumen Anual'],['consumos','Consumos por categoría'],['salario','Salario']]],
  ['',[['config','Configuración']]]];
 function nav(){
@@ -427,8 +427,8 @@ function vSalario(d){
 async function go(tab,fresh){
   if(tab==='config')return config();
   S.tab=tab;nav();window.scrollTo(0,0);
-  const v=$('#view');v.className=tab==='movs'||tab==='venc'?'wide':'';$('#acts').innerHTML='';
-  const T={inicio:['Inicio','App_inicio',vInicio],tarj:['Tarjetas','App_vencimientos',vTarjetas],cuotas:['Cuotas','App_cuotas',vCuotas],prest:['Préstamo','App_prestamo',vPrest],
+  const v=$('#view');v.className=tab==='movs'||tab==='venc'||tab==='tarj'?'wide':'';$('#acts').innerHTML='';
+  const T={inicio:['Inicio','App_inicio',vInicio],cuotas:['Cuotas','App_cuotas',vCuotas],prest:['Préstamo','App_prestamo',vPrest],
     activos:['Activos','App_activos',vActivos],ipc:['Inflación','App_ipc',vIpc],super:['Súper','App_super',vSuper],
     anual:['Resumen Anual','App_resumenAnual',vAnual],consumos:['Consumos por categoría','App_resumenAnual',vConsumos],salario:['Salario','App_salario',vSalario]};
   try{
@@ -443,6 +443,11 @@ async function go(tab,fresh){
       $('#ttl').textContent='Vencimientos';v.innerHTML=cargando;
       const d=await post('edVencs');if(S.tab!=='venc')return;
       S.ven=d;v.innerHTML=vVencEd();
+      $('#acts').innerHTML='<button class="btn pri" onclick="formVencNuevo()" title="Nuevo vencimiento (N)">+ Nuevo vencimiento</button>';
+    }else if(tab==='tarj'){
+      $('#ttl').textContent='Tarjetas';v.innerHTML=cargando;
+      const d=await post('edTarjetas');if(S.tab!=='tarj')return;
+      S.tj=d;v.innerHTML=vTarjEd();
     }else{
       const P=T[tab];if(!P)return;
       $('#ttl').textContent=P[0];v.innerHTML=cargando;
@@ -558,19 +563,19 @@ function vVencEd(){
   const d=S.ven,pend=d.items.filter(x=>!x.pagado),pag=d.items.filter(x=>x.pagado);
   const tot=pend.reduce((a,x)=>({ars:a.ars+x.ars,usd:a.usd+x.usd}),{ars:0,usd:0});
   let h=`<div class="hero" style="text-align:left;margin:0 0 20px"><small>Pendiente de pago</small><b>${money(tot.ars)}</b>${tot.usd?`<div class="usd">${money(tot.usd,'USD')}</div>`:''}</div>`;
-  const tabla=(t,items)=>`<div class="tcard"><h2>${t} (${items.length})</h2><table class="tb" style="table-layout:fixed"><colgroup><col style="width:90px"><col><col style="width:20%"><col style="width:140px"><col style="width:120px"><col style="width:90px"><col style="width:110px"></colgroup><thead><tr><th>Vence</th><th>Ítem</th><th>Categoría</th><th class="r">Pesos</th><th class="r">Dólares</th><th>Pagado</th><th></th></tr></thead><tbody>${items.map(filaV).join('')}</tbody></table></div>`;
+  const tabla=(t,items)=>`<div class="tcard"><h2>${t} (${items.length})</h2><table class="tb" style="table-layout:fixed"><colgroup><col style="width:90px"><col><col style="width:20%"><col style="width:140px"><col style="width:120px"><col style="width:90px"><col style="width:180px"></colgroup><thead><tr><th>Vence</th><th>Ítem</th><th>Categoría</th><th class="r">Pesos</th><th class="r">Dólares</th><th>Pagado</th><th></th></tr></thead><tbody>${items.map(filaV).join('')}</tbody></table></div>`;
   h+=pend.length?tabla('Pendientes',pend):'<div class="empty"><b>Todo pago</b>No hay vencimientos pendientes.</div>';
   if(pag.length)h+=tabla('Pagados',pag);
-  h+='<p class="sub">Las tarjetas y el préstamo toman la fecha y el monto de sus pestañas, por eso solo se marcan como pagados.</p>';
+  h+='<p class="sub">Las tarjetas y el préstamo toman la fecha y el monto de sus pestañas, por eso solo se marcan como pagados o se borran.</p>';
   return h;
 }
 function filaV(x){
   const late=!x.pagado&&x.dias!=null&&x.dias<0,soon=!x.pagado&&x.dias!=null&&x.dias>=0&&x.dias<=3;
   const tag=late?'<span class="tag red">Vencido</span>':soon?`<span class="tag blue">${enDias(x.dias)}</span>`:'';
   const edit=x.ed.f||x.ed.ars||x.ed.usd;
-  return `<tr class="${edit?'it':''}" ${edit?`onclick="formVenc(${x.fila})"`:''}><td>${x.f?esc(corto(x.f)):'—'}</td><td>${esc(x.item)}${tag}</td><td class="sub">${esc(x.cat)}</td><td class="r">${x.ars?money(x.ars):'<span class="sub">—</span>'}</td><td class="r">${x.usd?money(x.usd,'USD'):'<span class="sub">—</span>'}</td>
+  return `<tr class="it" onclick="formVenc(${x.fila})"><td>${x.f?esc(corto(x.f)):'—'}</td><td>${esc(x.item)}${tag}</td><td class="sub">${esc(x.cat)}</td><td class="r">${x.ars?money(x.ars):'<span class="sub">—</span>'}</td><td class="r">${x.usd?money(x.usd,'USD'):'<span class="sub">—</span>'}</td>
   <td><button class="sw ${x.pagado?'on':''}" title="${x.pagado?'Marcar pendiente':'Marcar pagado'}" onclick="event.stopPropagation();pagado(${x.fila},this)"></button></td>
-  <td class="ac">${edit?`<button onclick="event.stopPropagation();formVenc(${x.fila})">Editar</button>`:'<span class="lock">automático</span>'}</td></tr>`;
+  <td class="ac">${edit?`<button onclick="event.stopPropagation();formVenc(${x.fila})">Editar</button>`:'<span class="lock">automático</span>'}<button class="x" onclick="event.stopPropagation();borrarVenc(${x.fila})">Borrar</button></td></tr>`;
 }
 async function pagado(fila,btn){
   const x=S.ven.items.find(i=>i.fila===fila);if(!x)return;
@@ -585,7 +590,7 @@ function formVenc(fila){
   <label>Monto en pesos<input id="vA" inputmode="decimal" value="${esc(aTxt(x.ars||''))}" placeholder="0,00" ${x.ed.ars?'':'disabled'} autocomplete="off"></label>
   <label>Monto en dólares<input id="vU" inputmode="decimal" value="${esc(aTxt(x.usd||''))}" placeholder="0,00" ${x.ed.usd?'':'disabled'} autocomplete="off"></label>
   </div><div class="info">${esc(x.cat)}${!x.ed.f||!x.ed.ars||!x.ed.usd?' · los campos grises se calculan solos':''}</div><div class="err" id="fErr"></div>
-  <div class="btns"><button type="button" class="btn" onclick="cerrar()">Cancelar</button><button class="btn pri">Guardar</button></div></form>`);
+  <div class="btns"><button type="button" class="btn del" onclick="borrarVenc(S.edit.fila)">Borrar</button><button type="button" class="btn" onclick="cerrar()">Cancelar</button>${x.ed.f||x.ed.ars||x.ed.usd?'<button class="btn pri">Guardar</button>':''}</div></form>`);
   setTimeout(()=>{const e=$('#vF:not(:disabled)')||$('#vA:not(:disabled)');if(e)e.focus()},30);
 }
 async function guardarVenc(){
@@ -602,12 +607,89 @@ async function guardarVenc(){
   catch(e){ocupado(false);$('#fErr').textContent=e.message}
 }
 
+async function recargarVencs(){try{S.ven=await post('edVencs');if(S.tab==='venc')$('#view').innerHTML=vVencEd()}catch(e){toast(e.message,true)}}
+function formVencNuevo(){
+  const cats=[...new Set(S.ven.items.map(i=>i.cat).filter(Boolean))].sort();
+  S.edit=null;S.tjNombres=S.tjNombres||[];
+  abrir(`<h2>Nuevo vencimiento</h2><form onsubmit="event.preventDefault();guardarVencNuevo()"><div class="fg">
+  <label class="s2">Ítem<input id="nI" list="dlTj" maxlength="80" required autocomplete="off" placeholder="Ej.: Internet, Seguro del auto"></label>
+  <label class="s2">Categoría<input id="nC" list="dlCat" required autocomplete="off" placeholder="Ej.: Servicios"></label>
+  <label class="s2">Fecha de vencimiento<input type="date" id="vF" value="${hoyYmd()}"></label>
+  <label>Monto en pesos<input id="vA" inputmode="decimal" placeholder="0,00" autocomplete="off"></label>
+  <label>Monto en dólares<input id="vU" inputmode="decimal" placeholder="0,00" autocomplete="off"></label>
+  </div><datalist id="dlCat">${cats.map(c=>`<option value="${esc(c)}">`).join('')}</datalist><datalist id="dlTj"></datalist>
+  <div class="info" id="nInfo">Si el ítem se llama igual que una tarjeta, la fecha y el monto se toman solos de la pestaña Tarjetas.</div><div class="err" id="fErr"></div>
+  <div class="btns"><button type="button" class="btn" onclick="cerrar()">Cancelar</button><button class="btn pri">Agregar</button></div></form>`);
+  const tj=()=>S.L?S.L.cuentas:[];
+  const fill=()=>{$('#dlTj').innerHTML=tj().map(n=>`<option value="${esc(n)}">`).join('')};
+  if(S.L)fill();else post('edListas').then(L=>{S.L=L;fill()}).catch(()=>{});
+  $('#nI').addEventListener('input',()=>{const t=tj().includes($('#nI').value.trim());['vF','vA','vU'].forEach(id=>$('#'+id).disabled=t);if(t&&!$('#nC').value)$('#nC').value='Tarjeta de Crédito'});
+  setTimeout(()=>$('#nI').focus(),30);
+}
+async function guardarVencNuevo(){
+  const a={item:$('#nI').value.trim(),cat:$('#nC').value.trim()};
+  const tarjeta=$('#vF').disabled;
+  try{
+    if(!a.item)throw new Error('Falta el ítem');if(!a.cat)throw new Error('Falta la categoría');
+    if(!tarjeta){
+      a.f=$('#vF').value;if(!a.f)throw new Error('Falta la fecha');
+      const n=id=>{const s=$(id).value.trim();if(!s)return '';const v=aNum(s);if(!isFinite(v)||v<0)throw new Error('Revisá el monto');return v};
+      a.ars=n('#vA');a.usd=n('#vU');if(a.ars===''&&a.usd==='')throw new Error('Poné el monto en pesos o en dólares');
+    }
+  }catch(e){$('#fErr').textContent=e.message;return}
+  ocupado(true);
+  try{await post('edVencNuevo',a);cerrar();toast('Vencimiento agregado');await recargarVencs()}
+  catch(e){ocupado(false);$('#fErr').textContent=e.message}
+}
+function borrarVenc(fila){
+  const x=S.ven.items.find(i=>i.fila===fila);if(!x)return;S.edit=x;
+  abrir(`<h2>¿Borrar este vencimiento?</h2><div class="card" style="background:#12161a;margin:0"><div class="row" style="padding:0"><div class="g"><div>${esc(x.item)}</div><div class="sub">${esc(x.cat)}${x.f?' · vence '+esc(corto(x.f)):''}</div></div><div class="r">${monto(x.ars,x.usd)}</div></div></div>
+  <p class="info">Se borra la fila de la pestaña Vencimientos. Queda una copia en “Billetera App – Registro”.</p><div class="err" id="fErr"></div>
+  <div class="btns"><button class="btn" onclick="cerrar()">Cancelar</button><button class="btn del" style="margin:0" id="bDel" onclick="confirmarBorrarVenc()">Borrar</button></div>`);
+  setTimeout(()=>$('#bDel').focus(),30);
+}
+async function confirmarBorrarVenc(){
+  const x=S.edit;ocupado(true);
+  try{await post('edVencBorrar',{fila:x.fila,item:x.item,firma:x.firma});cerrar();toast('Vencimiento borrado');await recargarVencs()}
+  catch(e){ocupado(false);$('#fErr').textContent=e.message}
+}
+
+/* ---------- Tarjetas (fechas editables) ---------- */
+const TJC=[['cant','Cierre anterior'],['cierre','Cierre actual'],['venc','Vencimiento'],['pcierre','Próximo cierre'],['pvenc','Próximo vencimiento']];
+function vTarjEd(){
+  const d=S.tj,it=d.items.filter(t=>!/^varios$/i.test(t.banco));
+  if(!it.length)return '<div class="empty"><b>Sin tarjetas</b>No hay datos en la pestaña Tarjetas.</div>';
+  const tot=it.reduce((a,t)=>({ars:a.ars+t.ars,usd:a.usd+t.usd}),{ars:0,usd:0});
+  const fch=(t,k)=>t[k]?esc(corto(t[k]))+(k==='cierre'&&t[k]<=d.hoy?' <span class="tag">cerrado</span>':''):'<span class="sub">—</span>';
+  let h=`<div class="hero" style="text-align:left;margin:0 0 20px"><small>Resúmenes actuales</small><b>${money(tot.ars)}</b>${tot.usd?`<div class="usd">${money(tot.usd,'USD')}</div>`:''}</div>`;
+  h+=`<div class="tcard"><table class="tb"><thead><tr><th>Tarjeta</th>${TJC.map(c=>`<th>${c[1]}</th>`).join('')}<th class="r">Resumen</th><th></th></tr></thead><tbody>${it.map(t=>`<tr class="it" onclick="formTarj(${t.fila})"><td><div>${esc(t.n)}</div><div class="sub">${esc(t.banco)}</div></td>${TJC.map(c=>`<td>${fch(t,c[0])}</td>`).join('')}<td class="r">${monto(t.ars,t.usd)}</td><td class="ac"><button onclick="event.stopPropagation();formTarj(${t.fila})">Editar</button></td></tr>`).join('')}</tbody></table></div>`;
+  h+='<p class="sub">El resumen de cada tarjeta lo calcula la planilla con los movimientos entre el cierre anterior y el actual.</p>';
+  return h;
+}
+function formTarj(fila){
+  const t=S.tj.items.find(i=>i.fila===fila);if(!t)return;S.edit=t;
+  abrir(`<h2>${esc(t.n)}</h2><form onsubmit="event.preventDefault();guardarTarj()"><div class="fg">
+  ${TJC.map(c=>`<label>${c[1]}<input type="date" id="t_${c[0]}" value="${esc(t[c[0]])}" ${t.ed[c[0]]?'':'disabled'}></label>`).join('')}
+  </div><div class="info">${esc(t.banco)} · Al cambiar el cierre o el cierre anterior, la planilla recalcula el resumen sola.</div><div class="err" id="fErr"></div>
+  <div class="btns"><button type="button" class="btn" onclick="cerrar()">Cancelar</button><button class="btn pri">Guardar</button></div></form>`);
+  setTimeout(()=>{const e=$('#t_cierre:not(:disabled)');if(e)e.focus()},30);
+}
+async function guardarTarj(){
+  const t=S.edit,campos={};
+  TJC.forEach(c=>{const e=$('#t_'+c[0]);if(!e.disabled&&e.value!==t[c[0]])campos[c[0]]=e.value});
+  if(!Object.keys(campos).length){cerrar();return}
+  if(campos.cierre===''||campos.venc===''){$('#fErr').textContent='El cierre y el vencimiento actuales no pueden quedar vacíos';return}
+  ocupado(true);
+  try{await post('edTarjetaGuardar',{fila:t.fila,n:t.n,firma:t.firma,campos:campos});cerrar();toast('Tarjeta actualizada');S.tj=await post('edTarjetas');if(S.tab==='tarj')$('#view').innerHTML=vTarjEd()}
+  catch(e){ocupado(false);$('#fErr').textContent=e.message}
+}
+
 /* ---------- Teclado ---------- */
 document.addEventListener('keydown',e=>{
   const enForm=/INPUT|SELECT|TEXTAREA/.test(document.activeElement&&document.activeElement.tagName);
   if(e.key==='Escape'&&$('#modal').classList.contains('on')){cerrar();return}
   if((e.metaKey||e.ctrlKey)&&e.key==='r'){e.preventDefault();go(S.tab,true);return}
-  if(!enForm&&!$('#modal').classList.contains('on')&&S.tab==='movs'&&(e.key==='n'||e.key==='N')&&!e.metaKey&&!e.ctrlKey){e.preventDefault();formMov()}
+  if(!enForm&&!$('#modal').classList.contains('on')&&(S.tab==='movs'||S.tab==='venc')&&(e.key==='n'||e.key==='N')&&!e.metaKey&&!e.ctrlKey){e.preventDefault();S.tab==='movs'?formMov():formVencNuevo()}
 });
 
 nav();if(CFG.get('url')&&CFG.get('key'))go('inicio');else config();
