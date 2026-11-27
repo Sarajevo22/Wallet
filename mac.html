@@ -167,6 +167,7 @@ button{cursor:pointer}
 .row.tap:hover{background:#2a343b}
 .row.tap:hover+.row,.row.tap:hover{border-top-color:transparent}
 circle.tap:hover{stroke-width:24}
+.bars .tap{cursor:pointer}.bars .tap:hover i{background:#56697a}.bars .tap.on:hover i{background:var(--blue)}
 .row.tap.sel{background:#2f3a42}
 .chip.cat{display:flex;align-items:center;gap:8px}
 .chip .x{opacity:.6;font-size:13px}
@@ -474,9 +475,10 @@ async function go(tab,fresh){
       $('#acts').innerHTML='<button class="btn pri" onclick="formAct()">+ Nuevo activo</button>';
     }else if(tab==='super'){
       $('#ttl').textContent='Súper';v.innerHTML=cargando;
-      const [d,m]=await Promise.all([run('App_super',!!fresh),post('superMes',{fresh:!!fresh}).catch(()=>null)]);if(S.tab!=='super')return;
-      // Sin AppFase4.gs: usa las últimas compras del mes en curso
-      S.supR=d;S.smes=m||{mes:d.mes,items:d.compras.filter(c=>c.f.slice(0,7)===d.mes)};S.ssub='';v.innerHTML=vSuperMac();
+      // App_superMes (AppFase4.gs, el mismo que usa el iPhone)
+      const r=await post('superMes',{fresh:!!fresh});if(S.tab!=='super')return;
+      const d={actual:r.mes,meses:r.meses.map(m=>({k:m.k,total:m.v,subs:m.subs.map(x=>({n:x.n,v:x.v,resumen:true}))})),items:[].concat(...r.meses.map(m=>m.items.map(i=>Object.assign({k:m.k},i))))};
+      S.supM=d;S.sm=d.actual;S.ssub='';v.innerHTML=vSuperMac();
     }else if(tab==='tarj'){
       $('#ttl').textContent='Tarjetas';v.innerHTML=cargando;
       const d=await post('edTarjetas');if(S.tab!=='tarj')return;
@@ -824,8 +826,9 @@ async function guardarAporte(tipo){
   catch(e){ocupado(false);$('#fErr').textContent=e.message}
 }
 
-/* ---------- Súper: clic en una subcategoría muestra sus productos del mes ---------- */
+/* ---------- Súper: clic en un mes (barras) y en una subcategoría ---------- */
 function verSub(n){S.ssub=S.ssub===n?'':n;$('#view').innerHTML=vSuperMac()}
+function verMesSup(k){S.sm=k;S.ssub='';$('#view').innerHTML=vSuperMac()}
 function comprasTabla(cs,conSub){
   let h='',k='';
   cs.forEach(c=>{const key=c.f+'|'+c.com;
@@ -834,21 +837,25 @@ function comprasTabla(cs,conSub){
   return `<table class="tb">${h}</table>`;
 }
 function vSuperMac(){
-  const d=S.supR,eq=(a,b)=>String(a).trim().toLowerCase()===String(b).trim().toLowerCase();
-  const tot=d.subs.reduce((a,x)=>a+x.mes,0),anual=d.subs.reduce((a,x)=>a+x.anual,0);
-  const mes=esc(mesTxt(d.mes).split(' ')[0].toLowerCase());
-  let h=`<div class="kpis" style="grid-template-columns:1.3fr 1fr"><div class="card big"><small>Súper en ${mes}</small><b>${money(tot)}</b></div><div class="card"><small>En el año</small><b>${money(anual)}</b></div></div>`;
-  let izq='';
-  if(d.meses.length)izq+=`<div class="card"><h2>Por mes</h2>${barras(d.meses.map(m=>({v:m.v,l:mesCorto(m.k)})),d.meses.findIndex(m=>m.k===d.mes))}</div>`;
-  if(d.subs.length){const max=Math.max(...d.subs.map(x=>x.mes),1);
-    izq+=`<div class="card"><h2>Por subcategoría</h2><p class="nota">Hacé clic en una subcategoría para ver sus productos del mes.</p>${d.subs.map(x=>`<div class="row tap${eq(x.n,S.ssub)?' sel':''}" style="display:block" data-sub="${esc(x.n)}" onclick="verSub(this.dataset.sub)"><div style="display:flex;gap:12px"><div class="g"><div>${esc(x.n)}</div><div class="sub">En el año ${money(x.anual)}</div></div><div class="r">${money(x.mes)}</div></div><div class="prog"><i style="width:${Math.round(x.mes/max*100)}%;background:${colCat(x.n)}"></i></div></div>`).join('')}</div>`;}
+  const d=S.supM,eq=(a,b)=>String(a).trim().toLowerCase()===String(b).trim().toLowerCase();
+  if(!d.meses.length)return '<div class="empty"><b>Sin compras</b>No hay compras cargadas en Detalle_Super.</div>';
+  if(!S.sm)S.sm=d.actual;
+  const m=d.meses.find(x=>x.k===S.sm)||{k:S.sm,total:0,subs:[]};
+  const anio=S.sm.slice(0,4),anual=d.meses.filter(x=>x.k.slice(0,4)===anio).reduce((a,x)=>a+x.total,0);
+  const mes=esc(mesTxt(S.sm).split(' ')[0].toLowerCase());
+  let h=`<div class="kpis" style="grid-template-columns:1.3fr 1fr"><div class="card big"><small>Súper en ${mes}${S.sm===d.actual?' (mes en curso)':''}</small><b>${money(m.total)}</b></div><div class="card"><small>En ${anio}</small><b>${money(anual)}</b></div></div>`;
+  const ms=d.meses.slice(-12),max=Math.max(...ms.map(x=>x.total),1);
+  let izq=`<div class="card"><h2>Por mes${S.sm!==d.actual?`<button class="lnk" onclick="verMesSup('${d.actual}')">Volver al mes en curso</button>`:''}</h2><p class="nota">Hacé clic en un mes para ver sus subcategorías.</p><div class="bars">${ms.map(x=>`<div class="tap ${x.k===S.sm?'on':''}" onclick="verMesSup('${x.k}')" title="${esc(mesTxt(x.k))}: ${money(x.total)}"><i style="height:${Math.round(x.total/max*100)}%"></i><small>${esc(mesCorto(x.k))}</small></div>`).join('')}</div></div>`;
+  if(m.subs.length){const mx=Math.max(...m.subs.map(x=>x.v),1);
+    izq+=`<div class="card"><h2>Subcategorías de ${mes}</h2><p class="nota">Hacé clic en una subcategoría para ver sus productos.</p>${m.subs.map(x=>`<div class="row tap${eq(x.n,S.ssub)?' sel':''}" style="display:block" data-sub="${esc(x.n)}" onclick="verSub(this.dataset.sub)"><div style="display:flex;gap:12px"><div class="g"><div>${esc(x.n)}${x.resumen?'':'<span class="tag" title="Tiene productos pero la planilla no la suma en el resumen">fuera del resumen</span>'}</div><div class="sub">${(x.v/m.total*100).toFixed(1).replace('.',',')}%</div></div><div class="r">${money(x.v)}</div></div><div class="prog"><i style="width:${Math.round(x.v/mx*100)}%;background:${colCat(x.n)}"></i></div></div>`).join('')}</div>`;}
+  else izq+='<div class="empty"><b>Sin compras este mes</b>Todavía no hay compras del súper cargadas.</div>';
+  const delMes=d.items.filter(c=>c.k===S.sm);
   let der='';
   if(S.ssub){
-    const it=((S.smes&&S.smes.items)||[]).filter(c=>eq(c.sub,S.ssub)),sb=d.subs.find(x=>eq(x.n,S.ssub));
-    const t=sb?sb.mes:it.reduce((a,c)=>a+c.m,0);
-    der+=`<div class="card"><div class="tools" style="margin-bottom:6px"><button class="chip on cat" onclick="verSub('')" title="Quitar filtro"><span class="cdot" style="margin:0;background:${colCat(S.ssub)}"></span>${esc(S.ssub)}<span class="x">✕</span></button></div><div class="kv" style="border:0"><span>${it.length} ${it.length===1?'producto':'productos'} en ${mes}${sb?' · en el año '+money(sb.anual):''}</span><b>${money(t)}</b></div>${it.length?comprasTabla(it,false):'<p class="sub">No hay compras de esta subcategoría en el mes.</p>'}</div>`;
-  }else if(d.compras.length){
-    der+=`<div class="card"><h2>Últimas compras</h2>${comprasTabla(d.compras.slice(0,60),true)}</div>`;
+    const it=delMes.filter(c=>eq(c.sub,S.ssub)),sb=m.subs.find(x=>eq(x.n,S.ssub));
+    der=`<div class="card"><div class="tools" style="margin-bottom:6px"><button class="chip on cat" onclick="verSub('')" title="Quitar filtro"><span class="cdot" style="margin:0;background:${colCat(S.ssub)}"></span>${esc(S.ssub)}<span class="x">✕</span></button></div><div class="kv" style="border:0"><span>${it.length} ${it.length===1?'producto':'productos'} en ${mes}</span><b>${money(sb?sb.v:it.reduce((a,c)=>a+c.m,0))}</b></div>${it.length?comprasTabla(it,false):'<p class="sub">No hay productos de esta subcategoría en el mes.</p>'}</div>`;
+  }else if(delMes.length){
+    der=`<div class="card"><h2>Compras de ${mes} (${delMes.length} productos)</h2>${comprasTabla(delMes,true)}</div>`;
   }
   return h+`<div class="dash"><div>${izq}</div><div>${der}</div></div>`;
 }
