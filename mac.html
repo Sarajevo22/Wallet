@@ -75,6 +75,7 @@ nav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;st
 .kv{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--line);font-size:15px}
 .kv:first-of-type{border-top:0}
 .kv span{color:var(--mu)}
+.kv.tap{cursor:pointer}.kv.tap:hover{background:rgba(255,255,255,.04)}
 .bars{display:flex;align-items:flex-end;gap:6px;height:120px;margin:6px 0 4px}
 .bars div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%}
 .bars i{display:block;width:100%;border-radius:6px 6px 3px 3px;background:#3a4a56;min-height:3px}
@@ -450,9 +451,9 @@ function vSalario(d){
 async function go(tab,fresh){
   if(tab==='config')return config();
   S.tab=tab;nav();window.scrollTo(0,0);
-  const v=$('#view');v.className=['movs','venc','tarj','inicio','activos','super'].includes(tab)?'wide':'';$('#acts').innerHTML='';
-  const T={inicio:['Inicio','App_inicio',vInicioMac],cuotas:['Cuotas','App_cuotas',vCuotas],prest:['Préstamo','App_prestamo',vPrest],
-    activos:['Activos','App_activos',vActivos],ipc:['Inflación','App_ipc',vIpc],super:['Súper','App_super',vSuper],
+  const v=$('#view');v.className=['movs','venc','tarj','inicio','activos','super','cuotas','prest','anual','consumos','ipc','salario'].includes(tab)?'wide':'';$('#acts').innerHTML='';
+  const T={inicio:['Inicio','App_inicio',vInicioMac],cuotas:['Cuotas','App_cuotas',vCuotas],prest:['Préstamo','App_prestamo',vPrestMac],
+    activos:['Activos','App_activos',vActivos],ipc:['Inflación','App_ipc',vIpcMac],super:['Súper','App_super',vSuper],
     anual:['Resumen Anual','App_resumenAnual',vAnual],consumos:['Consumos por categoría','App_resumenAnual',vConsumos],salario:['Salario','App_salario',vSalario]};
   try{
     if(tab==='movs'){
@@ -483,6 +484,19 @@ async function go(tab,fresh){
       $('#ttl').textContent='Tarjetas';v.innerHTML=cargando;
       const d=await post('edTarjetas');if(S.tab!=='tarj')return;
       S.tj=d;v.innerHTML=vTarjEd();
+    }else if(tab==='cuotas'){
+      $('#ttl').textContent='Cuotas';v.innerHTML=cargando;
+      // App_cuotasPorMes (AppFase4.gs, el mismo que usa el iPhone)
+      const d=await post('cuotasPorMes',{fresh:!!fresh});if(S.tab!=='cuotas')return;
+      S.cpm=d;if(!S.cuom||!(d.meses||[]).some(m=>m.k===S.cuom))S.cuom=d.mes;v.innerHTML=vCuotasMac();
+    }else if(tab==='anual'||tab==='consumos'){
+      $('#ttl').textContent=T[tab][0];v.innerHTML=cargando;
+      const d=await run('App_resumenAnual',!!fresh);if(S.tab!==tab)return;
+      S.an=d;v.innerHTML=tab==='anual'?vAnualMac():vConsumosMac();
+    }else if(tab==='salario'){
+      $('#ttl').textContent='Salario';v.innerHTML=cargando;
+      const d=await run('App_salario',!!fresh);if(S.tab!=='salario')return;
+      S.sal=d;S.sali=-1;v.innerHTML=vSalarioMac();
     }else{
       const P=T[tab];if(!P)return;
       $('#ttl').textContent=P[0];v.innerHTML=cargando;
@@ -860,6 +874,110 @@ function vSuperMac(){
   }
   return h+`<div class="dash" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)"><div>${izq}</div><div>${der}</div></div>`;
 }
+
+/* ---------- Pantallas de lectura para pantalla grande ---------- */
+const hoyK=()=>hoyYmd().slice(0,7);
+// Barras con clic: items [{v,l,t}], on = índice elegido, fn = nombre de la función a llamar con el índice
+function barrasC(items,on,fn){const max=Math.max(...items.map(m=>Math.abs(m.v)),1);return `<div class="bars">${items.map((m,i)=>`<div class="tap ${i===on?'on':''}" onclick="${fn}(${i})" title="${esc(m.t||m.l)}"><i style="height:${Math.round(Math.abs(m.v)/max*100)}%"></i><small>${esc(m.l)}</small></div>`).join('')}</div>`}
+const kpi=(t,v,sub,cls,big)=>`<div class="card${big?' big':''}"><small>${t}</small><b class="${cls||''}">${v}</b>${sub?`<div class="sub" style="margin-top:4px">${sub}</div>`:''}</div>`;
+const dash=(izq,der,cols)=>`<div class="dash"${cols?` style="grid-template-columns:${cols}"`:''}><div>${izq}</div><div>${der}</div></div>`;
+const rerender=fn=>{$('#view').innerHTML=fn()};
+
+/* Cuotas: barras por mes (por defecto el mes en curso) y las cuotas de ese mes */
+function selCuota(i){S.cuom=S.cpm.meses[i].k;rerender(vCuotasMac)}
+function vCuotasMac(){
+  const d=S.cpm,ms=(d&&d.meses)||[];
+  if(!ms.length)return '<div class="empty"><b>Sin cuotas</b>No hay compras en cuotas en curso.</div>';
+  const i=Math.max(0,ms.findIndex(m=>m.k===S.cuom)),m=ms[i];S.cuom=m.k;
+  const tot12=ms.reduce((a,x)=>a+x.v,0),ult=m.items.filter(x=>x.nro&&x.nro===x.cuotas).length;
+  let h=`<div class="kpis">${kpi(`Cuotas de ${esc(mesTxt(m.k).toLowerCase())}${m.k===d.mes?' (mes en curso)':''}`,money(m.v),`${m.items.length} ${m.items.length===1?'compra':'compras'} en cuotas`,'',1)}${kpi('Comprometido en los próximos meses',money(tot12),`${ms.length} meses con cuotas`)}${kpi('Terminan este mes',String(ult),ult===1?'compra paga su última cuota':'compras pagan su última cuota')}</div>`;
+  const izq=`<div class="card"><h2>Compromiso por mes${m.k!==d.mes?`<button class="lnk" onclick="S.cuom='${d.mes}';rerender(vCuotasMac)">Volver al mes en curso</button>`:''}</h2><p class="nota">Hacé clic en un mes para ver sus cuotas.</p>${barrasC(ms.map(x=>({v:x.v,l:mesCorto(x.k),t:mesTxt(x.k)+': '+money(x.v)})),i,'selCuota')}${ms.map((x,j)=>`<div class="kv tap" onclick="selCuota(${j})" style="${j===i?'font-weight:600':''}"><span>${esc(mesTxt(x.k))}</span>${money(x.v)}</div>`).join('')}</div>`;
+  const der=`<div class="tcard"><h2>Cuotas de ${esc(mesTxt(m.k).toLowerCase())}</h2><table class="tb" style="table-layout:fixed"><colgroup><col><col style="width:150px"><col style="width:120px"><col style="width:120px"></colgroup><thead><tr><th>Compra</th><th>Cuota</th><th class="r">Del mes</th><th class="r">Total</th></tr></thead><tbody>${m.items.map(x=>{
+    const pct=x.cuotas&&x.nro?Math.round(x.nro/x.cuotas*100):0;
+    return `<tr><td><div style="overflow-wrap:anywhere">${esc(x.n)}${x.nro&&x.nro===x.cuotas?'<span class="tag blue">Última</span>':''}</div><div class="sub"><span class="cdot" style="background:${colCat(x.cat)}"></span>${esc(x.cat)}</div></td><td>${x.nro?`${x.nro} de ${x.cuotas}`:x.cuotas?`${x.cuotas} cuotas`:'—'}<div class="prog" style="margin-top:6px"><i style="width:${pct}%"></i></div></td><td class="r">${money(x.v)}</td><td class="r sub">${money(x.total)}</td></tr>`}).join('')}</tbody></table></div>`;
+  return h+dash(izq,der,'minmax(0,1fr) minmax(0,1.5fr)');
+}
+
+/* Préstamo */
+function vPrestMac(d){
+  const pagadas=d.total-d.restantes;
+  let h=`<div class="kpis">${kpi('Deuda pendiente',money(d.adeudado),`${d.restantes} de ${d.total} cuotas por pagar`,'',1)}${kpi('Pagado',money(d.pagado),`${pagadas} cuotas`,'pos')}${kpi('Deuda inicial',money(d.inicial),`${String(d.pct).replace('.',',')}% pagado`)}</div>`;
+  let izq=`<div class="card"><h2>Avance</h2><div class="prog" style="height:12px"><i style="width:${Math.min(100,d.pct)}%;background:var(--grn)"></i></div><div class="sub" style="margin-top:8px">${String(d.pct).replace('.',',')}% pagado · faltan ${d.restantes} cuotas</div></div>`;
+  if(d.proxima){const p=d.proxima;izq+=`<div class="card"><h2>Próxima cuota</h2><div class="row"><div class="ic${p.dias<0?' late':''}" style="font-size:12px;text-align:center;line-height:1.1">${esc(corto(p.f))}</div><div class="g"><div>Cuota ${p.n}</div><div class="sub${p.dias<0?' neg':''}">${p.dias<0?'Vencida · ':''}${enDias(p.dias)}</div></div><div class="r"><b>${money(p.imp)}</b></div></div></div>`}
+  const tabla=cs=>`<table class="tb"><thead><tr><th>Cuota</th><th>Vence</th><th class="r">Importe</th><th class="r">Deuda después</th></tr></thead><tbody>${cs.map(c=>`<tr><td>${c.n}</td><td>${esc(diaTxt(c.f))}</td><td class="r ${c.pagada?'neu':''}">${money(c.imp)}</td><td class="r sub">${money(c.saldo-c.imp)}</td></tr>`).join('')}</tbody></table>`;
+  const pend=d.cuotas.filter(c=>!c.pagada),pag=d.cuotas.filter(c=>c.pagada);
+  let der='';
+  if(pend.length)der+=`<div class="tcard"><h2>Cuotas pendientes (${pend.length})</h2>${tabla(pend)}</div>`;
+  if(pag.length)der+=`<div class="tcard"><details><summary style="padding:12px">Pagadas (${pag.length})</summary>${tabla(pag)}</details></div>`;
+  return h+dash(izq,der,'minmax(0,1fr) minmax(0,1.5fr)');
+}
+
+/* Resumen Anual: clic en un mes (barras o tabla) */
+function selAnual(i){S.ames=S.an.meses[i].k;rerender(vAnualMac)}
+function vAnualMac(){
+  const d=S.an;
+  if(!d.meses.length)return '<div class="empty"><b>Sin datos</b>No hay meses cargados en Resumen Anual.</div>';
+  if(!d.meses.find(m=>m.k===S.ames))S.ames=(d.meses.find(m=>m.k===hoyK())||d.meses[d.meses.length-1]).k;
+  const i=d.meses.findIndex(m=>m.k===S.ames),m=d.meses[i],neg=o=>o&&o.ars<0?'neg':'';
+  const mes=esc(mesTxt(m.k).toLowerCase());
+  let h=`<div class="kpis">${kpi('Saldo de '+mes,ppal(m.sal),m.sal&&m.sal.ars&&m.sal.usd?money(m.sal.usd,'USD'):'',neg(m.sal),1)}${kpi('Ingresos',ppal(m.ing),m.ing&&m.ing.ars&&m.ing.usd?money(m.ing.usd,'USD'):'','pos')}${kpi('Gastos',ppal(m.gas),m.gas&&m.gas.ars&&m.gas.usd?money(m.gas.usd,'USD'):'')}</div>`;
+  const izq=`<div class="card"><h2>Gasto por mes</h2><p class="nota">Hacé clic en un mes para ver su detalle.${d.corte?` Desde el ${esc(d.corte)} el gasto cuenta el pago de las tarjetas, no cada compra.`:''}</p>${barrasC(d.meses.map(x=>({v:x.gas?x.gas.ars:0,l:mesCorto(x.k),t:mesTxt(x.k)})),i,'selAnual')}</div>
+  <div class="tcard"><table class="tb"><thead><tr><th>Mes</th><th class="r">Ingreso</th><th class="r">Gasto</th><th class="r">Saldo</th></tr></thead><tbody>${d.meses.map((x,j)=>`<tr class="it" onclick="selAnual(${j})" style="${j===i?'background:#2f3a42':''}"><td>${esc(mesTxt(x.k))}</td><td class="r pos">${ppal(x.ing)}</td><td class="r">${ppal(x.gas)}</td><td class="r ${neg(x.sal)}">${ppal(x.sal)}</td></tr>`).reverse().join('')}</tbody></table></div>`;
+  const cats=(m.cats||[]).filter(c=>!/^pago tarjeta$/i.test(c.n)),tot=cats.reduce((a,c)=>a+c.v,0),mx=Math.max(...cats.map(c=>c.v),1);
+  const der=cats.length?`<div class="card"><h2>Consumos de ${mes}<button class="lnk" onclick="S.cmes='${m.k}';go('consumos')">Ver en Consumos ›</button></h2><p class="nota">Hacé clic en una categoría para ver sus movimientos.</p>${cats.map(c=>`<div class="row tap" style="display:block" data-cat="${esc(c.n)}" onclick="verCat(this.dataset.cat,'${m.k}','anual')"><div style="display:flex;gap:12px"><div class="g"><div>${esc(c.n)}</div><div class="sub">${tot?(c.v/tot*100).toFixed(1).replace('.',','):0}%</div></div><div class="r">${money(c.v)}</div></div><div class="prog"><i style="width:${Math.round(c.v/mx*100)}%;background:${colCat(c.n)}"></i></div></div>`).join('')}</div>`:'<div class="empty">Sin consumos por categoría en este mes.</div>';
+  return h+dash(izq,der);
+}
+
+/* Consumos por categoría: barras del consumo total por mes + categorías del mes elegido */
+function selCons(i){S.cmes=S.an.meses.filter(m=>(m.cats||[]).length)[i].k;rerender(vConsumosMac)}
+function vConsumosMac(){
+  const ms=S.an.meses.filter(m=>(m.cats||[]).length);
+  if(!ms.length)return '<div class="empty"><b>Sin datos</b>No hay consumos por categoría cargados.</div>';
+  if(!S.cmes||!ms.find(m=>m.k===S.cmes))S.cmes=(ms.find(m=>m.k===hoyK())||ms[ms.length-1]).k;
+  const sinPT=m=>m.cats.filter(c=>!/^pago tarjeta$/i.test(c.n)),totDe=m=>sinPT(m).reduce((a,c)=>a+c.v,0);
+  const i=ms.findIndex(m=>m.k===S.cmes),m=ms[i],prev=ms[i-1];
+  const cats=sinPT(m),pt=m.cats.find(c=>/^pago tarjeta$/i.test(c.n)),tot=totDe(m),max=Math.max(...cats.map(c=>c.v),1);
+  const ant=n=>{const c=prev&&prev.cats.find(x=>x.n===n);return c?c.v:null};
+  const totAnt=prev?totDe(prev):null,difT=totAnt?Math.round((tot-totAnt)/totAnt*100):null;
+  const mes=esc(mesTxt(m.k).toLowerCase());
+  let h=`<div class="kpis">${kpi('Consumo de '+mes,money(tot),'Incluye las cuotas con tarjeta del mes','',1)}${kpi('Vs. mes anterior',difT==null?'—':(difT>0?'+':'')+difT+'%',totAnt?money(totAnt)+' en '+esc(mesTxt(prev.k).toLowerCase()):'',difT==null?'':difT>0?'neg':'pos')}${kpi('Pago de tarjetas',pt?money(pt.v):'—','Sale de la cuenta')}</div>`;
+  const izq=`<div class="card"><h2>Por categoría</h2><p class="nota">Hacé clic en una categoría para ver sus movimientos.</p>${cats.map(c=>{const a=ant(c.n),dif=a?Math.round((c.v-a)/a*100):null;
+    return `<div class="row tap" style="display:block" data-cat="${esc(c.n)}" onclick="verCat(this.dataset.cat,'${m.k}','consumos')"><div style="display:flex;gap:12px"><div class="g"><div>${esc(c.n)}</div><div class="sub">${(c.v/tot*100).toFixed(1).replace('.',',')}%${dif!=null?` · <span class="${dif>0?'neg':'pos'}">${dif>0?'+':''}${dif}%</span> vs. mes anterior`:''}</div></div><div class="r">${money(c.v)}${c.usd?`<div class="sub">${money(c.usd,'USD')}</div>`:''}</div></div><div class="prog"><i style="width:${Math.round(c.v/max*100)}%;background:${colCat(c.n)}"></i></div></div>`}).join('')}</div>`;
+  const der=`<div class="card"><h2>Consumo por mes</h2><p class="nota">Hacé clic en un mes para ver sus categorías.</p>${barrasC(ms.map(x=>({v:totDe(x),l:mesCorto(x.k),t:mesTxt(x.k)+': '+money(totDe(x))})),i,'selCons')}${ms.map((x,j)=>`<div class="kv tap" onclick="selCons(${j})" style="${j===i?'font-weight:600':''}"><span>${esc(mesTxt(x.k))}</span>${money(totDe(x))}</div>`).reverse().join('')}</div>`;
+  return h+dash(izq,der,'minmax(0,1.4fr) minmax(0,1fr)');
+}
+
+/* Inflación */
+function vIpcMac(d){
+  let h=seg2(['activos','Activos'],['ipc','Inflación'],'ipc');
+  if(d.kpis.length)h+=`<div class="kpis" style="grid-template-columns:repeat(${Math.min(d.kpis.length,4)},1fr)">${d.kpis.map(k=>kpi(esc(cap(k.k.toLowerCase())),esc(k.v),esc(k.nota),/real|cartera/i.test(k.k)?pctCls(k.v):'')).join('')}</div>`;
+  let izq='',der='';
+  if(d.meses.length){
+    izq+=`<div class="card"><h2>IPC mensual ${esc(d.meses[0].k.slice(0,4))}</h2>${barras(d.meses.filter(m=>m.ipc).map(m=>({v:pctNum(m.ipc),l:mesCorto(m.k)})),-1)}</div>`;
+    izq+=`<div class="tcard"><table class="tb"><thead><tr><th>Mes</th><th class="r">IPC</th><th class="r">Acumulado</th><th class="r">Cartera</th><th class="r">Real acum.</th></tr></thead><tbody>${d.meses.slice().reverse().map(m=>`<tr><td>${mesK(m.k)}${/curso/i.test(m.est)?'<span class="tag blue">En curso</span>':''}</td><td class="r">${esc(m.ipc||'—')}</td><td class="r">${esc(m.acum||'—')}</td><td class="r ${pctCls(m.cart)}">${esc(m.cart||'—')}</td><td class="r ${pctCls(m.realAcum)}">${esc(m.realAcum||'—')}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+  if(d.activos.length)der+=`<div class="tcard"><h2>Activos vs. inflación</h2><table class="tb"><thead><tr><th>Activo</th><th class="r">Nominal</th><th class="r">IPC</th><th class="r">Real</th></tr></thead><tbody>${d.activos.map(a=>`<tr><td><div>${esc(a.n)}${a.des?`<span class="tag ${/gan/i.test(a.des)?'blue':'red'}">${esc(a.des)}</span>`:''}</div><div class="sub">${esc(a.tipo||'')}</div></td><td class="r">${esc(a.nom||'—')}</td><td class="r sub">${esc(a.ipc||'—')}</td><td class="r ${pctCls(a.real)}">${esc(a.real||'—')}</td></tr>`).join('')}</tbody></table></div>`;
+  return h+dash(izq,der,'minmax(0,1fr) minmax(0,1fr)');
+}
+
+/* Salario: clic en un mes de la evolución (por defecto el mes en curso) */
+function selSal(i){S.sali=i;rerender(vSalarioMac)}
+function vSalarioMac(){
+  const d=S.sal,k=d.kpis;let h='';
+  if(k.length)h+=`<div class="kpis" style="grid-template-columns:1.3fr ${'1fr '.repeat(Math.min(k.length-1,3))}">${kpi(esc(cap(k[0].k.toLowerCase())),esc(k[0].v),esc(k[0].n1)+(k[0].n2?' · '+esc(k[0].n2):''),'',1)}${k.slice(1,4).map(x=>kpi(esc(cap(x.k.toLowerCase())),esc(x.v),esc(x.n1))).join('')}</div>`;
+  let izq='',der='';
+  if(d.hist.length){
+    if(S.sali==null||S.sali<0||S.sali>=d.hist.length){const act=mesTxt(hoyK()).toLowerCase();const j=d.hist.findIndex(x=>String(x.p).trim().toLowerCase()===act);S.sali=j>=0?j:d.hist.length-1}
+    const x=d.hist[S.sali];
+    izq+=`<div class="card"><h2>Evolución del neto</h2><p class="nota">Hacé clic en un mes para ver su detalle.</p>${barrasC(d.hist.map(x=>({v:x.neto,l:x.p.slice(0,3).toLowerCase()+' '+x.p.slice(-2),t:x.p})),S.sali,'selSal')}</div>`;
+    izq+=`<div class="tcard"><table class="tb"><thead><tr><th>Período</th><th class="r">Bruto</th><th class="r">Descuentos</th><th class="r">Neto</th><th class="r">Aumento</th></tr></thead><tbody>${d.hist.map((y,j)=>`<tr class="it" onclick="selSal(${j})" style="${j===S.sali?'background:#2f3a42':''}"><td>${esc(y.p)}</td><td class="r">${money(y.bruto)}</td><td class="r sub">${money(y.desc)}</td><td class="r">${money(y.neto)}</td><td class="r ${y.inc&&y.inc!=='0,00%'?'pos':'sub'}">${y.inc&&y.inc!=='0,00%'?'+'+esc(y.inc):'—'}</td></tr>`).reverse().join('')}</tbody></table></div>`;
+    der+=`<div class="card"><h2>${esc(x.p)}</h2><div class="kv"><span>Neto</span><b>${money(x.neto)}</b></div><div class="kv"><span>Bruto</span>${money(x.bruto)}</div><div class="kv"><span>Descuentos</span>${money(x.desc)}</div><div class="kv"><span>Aumento</span><span class="${x.inc&&x.inc!=='0,00%'?'pos':''}">${x.inc&&x.inc!=='0,00%'?'+'+esc(x.inc):'—'}</span></div></div>`;
+  }
+  const prox=d.sim.find(s=>/pr[oó]ximo/i.test(s.p)),dif=d.sim.find(s=>/diferencia/i.test(s.p));
+  if(prox)der+=`<div class="card"><h2>Próximo aumento (simulado)</h2><div class="kv"><span>Aumento</span>${esc(prox.inc)}</div><div class="kv"><span>Neto proyectado</span>${money(prox.neto)}</div>${dif?`<div class="kv"><span>Diferencia de bolsillo</span><span class="pos">+${money(dif.neto)}</span></div>`:''}<div class="kv"><span>Bruto proyectado</span>${money(prox.bruto)}</div></div>`;
+  return h+dash(izq,der,'minmax(0,1.5fr) minmax(0,1fr)');
+}
+
 
 /* ---------- Teclado ---------- */
 document.addEventListener('keydown',e=>{
