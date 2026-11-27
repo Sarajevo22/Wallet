@@ -480,6 +480,10 @@ async function go(tab,fresh){
       const r=await post('superMes',{fresh:!!fresh});if(S.tab!=='super')return;
       const d={actual:r.mes,meses:r.meses.map(m=>({k:m.k,total:m.v,subs:m.subs.map(x=>({n:x.n,v:x.v,resumen:true}))})),items:[].concat(...r.meses.map(m=>m.items.map(i=>Object.assign({k:m.k},i))))};
       S.supM=d;S.sm=d.actual;S.ssub='';v.innerHTML=vSuperMac();
+    }else if(tab==='inicio'){
+      $('#ttl').textContent='Inicio';v.innerHTML=cargando;
+      const [d,tj]=await Promise.all([run('App_inicio',!!fresh),post('edTarjetas').catch(()=>null)]);if(S.tab!=='inicio')return;
+      S.tjIni=tj;v.innerHTML=vInicioMac(d);
     }else if(tab==='tarj'){
       $('#ttl').textContent='Tarjetas';v.innerHTML=cargando;
       const d=await post('edTarjetas');if(S.tab!=='tarj')return;
@@ -507,6 +511,17 @@ async function go(tab,fresh){
 }
 
 /* ---------- Inicio para pantalla grande ---------- */
+// Próximos cierres de las tarjetas (pestaña Tarjetas). Si el cierre actual ya pasó, se usa el próximo cierre.
+function cierresCard(){
+  const d=S.tjIni;if(!d||!d.items)return '';
+  const hoy=d.hoy||hoyYmd(),dias=f=>{const a=f.split('-'),b=hoy.split('-');return Math.round((new Date(a[0],a[1]-1,a[2])-new Date(b[0],b[1]-1,b[2]))/864e5)};
+  const L=d.items.filter(t=>!/^varios$/i.test(t.banco)).map(t=>{
+    if(t.cierre&&t.cierre>=hoy)return {t,f:t.cierre,v:t.venc};
+    if(t.pcierre&&t.pcierre>=hoy)return {t,f:t.pcierre,v:t.pvenc};
+    return null}).filter(Boolean).sort((a,b)=>a.f<b.f?-1:a.f>b.f?1:0);
+  return `<div class="card"><h2>Próximos cierres<button class="lnk" onclick="go('tarj')">Ver tarjetas ›</button></h2>${L.length?L.map(x=>{const n=dias(x.f);
+    return `<div class="row tap" onclick="go('tarj')"><div class="ic" style="font-size:12px;text-align:center;line-height:1.1">${esc(corto(x.f))}</div><div class="g"><div>${esc(x.t.n)}</div><div class="sub">${n===0?'Cierra hoy':n===1?'Cierra mañana':'Cierra en '+n+' días'}${x.v?' · vence '+esc(corto(x.v)):''}</div></div><div class="r">${x.f===x.t.cierre?monto(x.t.ars,x.t.usd):''}</div></div>`}).join(''):'<p class="sub">No hay cierres cargados en la pestaña Tarjetas.</p>'}</div>`;
+}
 function vInicioMac(d){
   let salLbl='Saldo',sal=d.sal;
   if(!sal&&d.ing&&d.gas){salLbl='Ingresos − gastos';sal={ars:d.ing.ars-d.gas.ars,usd:d.ing.usd-d.gas.usd}}
@@ -516,7 +531,7 @@ function vInicioMac(d){
   let h=`<div class="kpis"><div class="card big"><small>Gastos de ${mes}</small><b>${ppal(d.gas)}</b>${usdSub(d.gas)}</div><div class="card"><small>Ingresos de ${mes}</small><b class="pos">${ppal(d.ing)}</b>${usdSub(d.ing)}</div><div class="card"><small>${salLbl}</small><b class="${salCls}">${ppal(sal)}</b>${usdSub(sal)}</div></div>`;
   let izq='',der='';
   if(tot>0)izq+=`<div class="card"><h2>${esc(d.catsTitulo)}<button class="lnk" onclick="go('consumos')">Ver por mes ›</button></h2>${d.catsNota?`<p class="nota">${esc(d.catsNota)}</p>`:''}<div class="dcat">${dona(d.cats,tot,d.mes)}<div>${d.cats.map((c,i)=>`<div class="row tap" data-cat="${esc(c.n)}" onclick="verCat(this.dataset.cat,'${d.mes}','inicio')" title="Ver movimientos"><span class="dot" style="background:${COL[i%COL.length]}"></span><div class="g"><div>${esc(c.n)}</div></div><div class="r">${money(c.v)}<div class="sub">${(c.v/tot*100).toFixed(1).replace('.',',')}%${c.usd?` · ${money(c.usd,'USD')}`:''}</div></div></div>`).join('')}</div></div></div>`;
-  der+=`<div class="card"><h2>Próximos vencimientos<button class="lnk" onclick="go('venc')">Ver todos ›</button></h2>${d.venc.length?d.venc.map(x=>`<div class="row tap" onclick="go('venc')"><div class="ic${x.vencido?' late':''}" style="font-size:12px;text-align:center;line-height:1.1">${esc(corto(x.f))}</div><div class="g"><div>${esc(x.item)}</div><div class="sub${x.vencido?' neg':''}">${x.vencido?'Vencido · ':''}${esc(x.cat)}</div></div><div class="r">${x.ars?money(x.ars):''}${x.usd?`<div class="sub">${money(x.usd,'USD')}</div>`:''}</div></div>`).join(''):'<p class="sub">No hay vencimientos pendientes.</p>'}</div>`;
+  der+=cierresCard();
   (d.secciones||[]).forEach((s,i)=>{
     const c=`<div class="card"><h2>${esc(s.titulo)}</h2>${s.filas.map(f=>`<div class="kv"><span>${esc(f.label)}</span>${esc(f.texto)}</div>`).join('')}</div>`;
     if(tot>0&&i%2===0)izq+=c;else der+=c;
