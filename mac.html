@@ -833,8 +833,9 @@ function comprasTabla(cs,conSub){
   let h='',k='';
   cs.forEach(c=>{const key=c.f+'|'+c.com;
     if(key!==k){k=key;h+=`<tr class="dia"><td colspan="${conSub?3:2}">${esc(diaTxt(c.f))} · ${esc(c.com)}</td></tr>`}
-    h+=`<tr><td class="ds">${esc(c.p)}</td>${conSub?`<td><span class="cdot" style="background:${colCat(c.sub)}"></span>${esc(c.sub)}</td>`:''}<td class="r">${money(c.m)}</td></tr>`;});
-  return `<table class="tb">${h}</table>`;
+    h+=`<tr><td style="overflow-wrap:anywhere">${esc(c.p)}</td>${conSub?`<td class="ds"><span class="cdot" style="background:${colCat(c.sub)}"></span>${esc(c.sub)}</td>`:''}<td class="r">${money(c.m)}</td></tr>`;});
+  // Ancho fijo: los nombres largos se cortan con "…" en vez de estirar la tabla fuera de la tarjeta
+  return `<table class="tb" style="table-layout:fixed"><colgroup><col>${conSub?'<col style="width:32%">':''}<col style="width:104px"></colgroup>${h}</table>`;
 }
 function vSuperMac(){
   const d=S.supM,eq=(a,b)=>String(a).trim().toLowerCase()===String(b).trim().toLowerCase();
@@ -857,7 +858,7 @@ function vSuperMac(){
   }else if(delMes.length){
     der=`<div class="card"><h2>Compras de ${mes} (${delMes.length} productos)</h2>${comprasTabla(delMes,true)}</div>`;
   }
-  return h+`<div class="dash"><div>${izq}</div><div>${der}</div></div>`;
+  return h+`<div class="dash" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)"><div>${izq}</div><div>${der}</div></div>`;
 }
 
 /* ---------- Teclado ---------- */
